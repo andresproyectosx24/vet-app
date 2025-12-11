@@ -34,7 +34,7 @@ export default function AgendarPage() {
 
   useEffect(() => {
     if (!fecha) {
-        // Clear occupied slots on date change is handled by the listener below
+
         return;
     }
     const q = query(collection(db, "citas"), where("fechaSolo", "==", fecha));
@@ -55,6 +55,13 @@ export default function AgendarPage() {
     try {
       setEstado('guardando');
 
+      // 0. LIMPIEZA DE DATOS (Normalización)
+      // Quitamos espacios al principio y final para evitar " Juan " vs "Juan"
+      const nombreLimpio = nombreMascota.trim();
+      const telefonoLimpio = telefono.trim();
+      const duenoLimpio = nombreDueno.trim();
+      const razaLimpia = raza.trim() || 'Desconocido';
+
       // 1. SEGURIDAD: Verificar disponibilidad de hora
       const qCheck = query(
         collection(db, "citas"),
@@ -70,38 +77,53 @@ export default function AgendarPage() {
         return;
       }
 
-      // 2. SINCRONIZACIÓN AUTOMÁTICA
+      // 2. SINCRONIZACIÓN INTELIGENTE (Anti-Duplicados Mejorado)
+      // Paso A: Buscar todos los pacientes asociados a este teléfono
       const qPaciente = query(
         collection(db, "pacientes"),
-        where("nombre", "==", nombreMascota),
-        where("telefono", "==", telefono) 
+        where("telefono", "==", telefonoLimpio) 
       );
       const snapshotPaciente = await getDocs(qPaciente);
 
-      if (snapshotPaciente.empty) {
+      let pacienteExiste = false;
+
+      // Paso B: Revisar manualmente si el nombre coincide (ignorando mayúsculas/minúsculas)
+      snapshotPaciente.forEach((doc) => {
+          const datos = doc.data();
+          // Comparamos "firulais" con "FIRULAIS" -> true
+          if (datos.nombre.toLowerCase() === nombreLimpio.toLowerCase()) {
+              pacienteExiste = true;
+          }
+      });
+
+      // Paso C: Solo crear si NO encontramos coincidencia
+      if (!pacienteExiste) {
         await addDoc(collection(db, "pacientes"), {
-            nombre: nombreMascota,
+            nombre: nombreLimpio,
             especie: especie,
-            raza: raza || 'Desconocido', // Guardamos "Desconocido" si lo dejan vacío
+            raza: razaLimpia,
             edad: edad || 'No especificada',
             peso: '', 
-            dueño: nombreDueno,
-            telefono: telefono,
+            dueño: duenoLimpio,
+            telefono: telefonoLimpio,
             notas: 'Generado automáticamente desde Cita Web',
             vacunas: [], 
             createdAt: new Date()
         });
+        console.log("Nuevo expediente creado (No existía previamente)");
+      } else {
+        console.log("Expediente existente encontrado. No se duplicó.");
       }
 
       // 3. CREAR LA CITA
       const fechaFinal = new Date(fecha + 'T' + horaSeleccionada);
 
       await addDoc(collection(db, "citas"), {
-        dueño: nombreDueno,
-        telefono: telefono,
-        mascota: nombreMascota,
+        dueño: duenoLimpio,
+        telefono: telefonoLimpio,
+        mascota: nombreLimpio,
         especie: especie,
-        raza: raza || 'Desconocido',
+        raza: razaLimpia,
         edad: edad || 'No especificada',
         fecha: fechaFinal, 
         fechaSolo: fecha,  
@@ -111,6 +133,7 @@ export default function AgendarPage() {
       });
 
       setEstado('exito');
+      // Reset completo
       setNombreMascota(''); setEspecie('perro'); setRaza(''); setEdad(''); setPeso('');
       setNombreDueno(''); setTelefono('');
       setFecha(''); setHoraSeleccionada('');
@@ -153,7 +176,6 @@ export default function AgendarPage() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 items-start"> 
-                    {/* CAMBIO AQUÍ: Contenedor para Input + Texto de ayuda */}
                     <div>
                         <input 
                             type="text" 
@@ -163,7 +185,7 @@ export default function AgendarPage() {
                             className={`${inputClass} text-sm`} 
                         />
                         <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1 ml-1 leading-tight">
-                            Escriba &ldquo;Desconocida&rdquo; si no la sabe
+                            Escriba &quot;Desconocida&quot; si no la sabe
                         </p>
                     </div>
                     

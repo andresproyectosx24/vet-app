@@ -1,12 +1,8 @@
-// src/lib/firebase.js
+import { initializeApp, getApps, getApp } from "firebase/app";
+import { getFirestore } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
+import { getStorage } from "firebase/storage"; // <--- NUEVO IMPORT
 
-// 1. Importamos las funciones que necesitamos
-import { initializeApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore"; // Base de datos
-import { getAuth } from "firebase/auth";           // Usuarios
-
-// 2. Aquí pegas TU configuración (La que dejaste abierta en la pestaña de Chrome)
-// REEMPLAZA ESTE OBJETO con el que te dio Firebase
 const firebaseConfig = {
     apiKey: "AIzaSyD-9pijoF0zfFfD-kzbuJWDtI0l29U1Ao0",
   authDomain: "veterinario-306b2.firebaseapp.com",
@@ -17,9 +13,9 @@ const firebaseConfig = {
   measurementId: "G-WTLETBTGFW"
 };
 
-// 3. Inicializamos la conexión
-const app = initializeApp(firebaseConfig);
+// Singleton para evitar reinicializar en Next.js
+const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
-// 4. Exportamos las herramientas para usarlas en la app
 export const db = getFirestore(app);
 export const auth = getAuth(app);
+export const storage = getStorage(app); // <--- EXPORTAMOS STORAGE
