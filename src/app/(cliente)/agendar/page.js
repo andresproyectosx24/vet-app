@@ -23,8 +23,6 @@ export default function AgendarPage() {
   const [especie, setEspecie] = useState('perro');
   const [raza, setRaza] = useState('');
   const [edad, setEdad] = useState('');
-  // El peso lo quitamos de la vista del cliente o lo dejamos opcional, 
-  // pero NO lo guardamos en el expediente automático si no es relevante.
   const [peso, setPeso] = useState(''); 
 
   // --- DATOS CITA ---
@@ -36,8 +34,7 @@ export default function AgendarPage() {
 
   useEffect(() => {
     if (!fecha) {
-// Nothing to insert; the problematic setState call is removed.
-// The state reset is now handled by the return of the effect's cleanup function.
+        // Clear occupied slots on date change is handled by the listener below
         return;
     }
     const q = query(collection(db, "citas"), where("fechaSolo", "==", fecha));
@@ -73,9 +70,7 @@ export default function AgendarPage() {
         return;
       }
 
-      // 2. SINCRONIZACIÓN AUTOMÁTICA (La Magia)
-      // Buscamos si este paciente ya existe en la base de datos del veterinario
-      // Usamos Nombre + Teléfono como "Llave Única" simple
+      // 2. SINCRONIZACIÓN AUTOMÁTICA
       const qPaciente = query(
         collection(db, "pacientes"),
         where("nombre", "==", nombreMascota),
@@ -83,21 +78,19 @@ export default function AgendarPage() {
       );
       const snapshotPaciente = await getDocs(qPaciente);
 
-      // Si NO existe, lo creamos automáticamente en la colección 'pacientes'
       if (snapshotPaciente.empty) {
         await addDoc(collection(db, "pacientes"), {
             nombre: nombreMascota,
             especie: especie,
-            raza: raza || 'No especificada',
+            raza: raza || 'Desconocido', // Guardamos "Desconocido" si lo dejan vacío
             edad: edad || 'No especificada',
-            peso: '', // Campo vacío para que el veterinario lo llene después
+            peso: '', 
             dueño: nombreDueno,
             telefono: telefono,
             notas: 'Generado automáticamente desde Cita Web',
-            vacunas: [], // Inicializamos la cartilla vacía
+            vacunas: [], 
             createdAt: new Date()
         });
-        console.log("Expediente de paciente creado automáticamente");
       }
 
       // 3. CREAR LA CITA
@@ -108,8 +101,7 @@ export default function AgendarPage() {
         telefono: telefono,
         mascota: nombreMascota,
         especie: especie,
-        // Guardamos estos datos también en la cita por si el expediente cambia después
-        raza: raza || 'No especificada',
+        raza: raza || 'Desconocido',
         edad: edad || 'No especificada',
         fecha: fechaFinal, 
         fechaSolo: fecha,  
@@ -119,7 +111,6 @@ export default function AgendarPage() {
       });
 
       setEstado('exito');
-      // Reset completo
       setNombreMascota(''); setEspecie('perro'); setRaza(''); setEdad(''); setPeso('');
       setNombreDueno(''); setTelefono('');
       setFecha(''); setHoraSeleccionada('');
@@ -161,9 +152,22 @@ export default function AgendarPage() {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2"> {/* Quitamos Peso de aquí o lo dejamos opcional */}
-                    <input type="text" placeholder="Raza" value={raza} onChange={(e) => setRaza(e.target.value)} className={`${inputClass} text-sm`} />
-                    <input type="text" placeholder="Edad" value={edad} onChange={(e) => setEdad(e.target.value)} className={`${inputClass} text-sm`} />
+                <div className="grid grid-cols-2 gap-2 items-start"> 
+                    {/* CAMBIO AQUÍ: Contenedor para Input + Texto de ayuda */}
+                    <div>
+                        <input 
+                            type="text" 
+                            placeholder="Raza" 
+                            value={raza} 
+                            onChange={(e) => setRaza(e.target.value)} 
+                            className={`${inputClass} text-sm`} 
+                        />
+                        <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1 ml-1 leading-tight">
+                            Escriba &ldquo;Desconocida&rdquo; si no la sabe
+                        </p>
+                    </div>
+                    
+                    <input type="text" placeholder="Edad (años o meses)" value={edad} onChange={(e) => setEdad(e.target.value)} className={`${inputClass} text-sm`} />
                 </div>
             </div>
 
