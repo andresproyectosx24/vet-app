@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-// Importamos storage
+// Ruta relativa correcta
 import { db, storage } from '../../../lib/firebase'; 
 import { collection, addDoc, updateDoc, doc, query, orderBy, onSnapshot, deleteDoc } from 'firebase/firestore';
-// Importamos funciones de subida
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+// Importamos deleteObject para borrar archivos
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 
 // --- FUNCIÓN DE COMPRESIÓN ---
 const comprimirImagen = (archivo) => {
@@ -77,9 +77,8 @@ export default function PacientesPage() {
     return () => unsubscribe();
   }, []);
 
-  // 2. NUEVO: MANEJO DEL BOTÓN "ATRÁS" DE ANDROID
+  // 2. MANEJO DEL BOTÓN "ATRÁS" DE ANDROID
   useEffect(() => {
-    // Esta función se ejecuta cuando el usuario presiona "Atrás" en el celular
     const handleBack = () => {
         setVista('lista');
         setPacienteActivo(null);
@@ -89,17 +88,17 @@ export default function PacientesPage() {
     return () => window.removeEventListener('popstate', handleBack);
   }, []);
 
-  // Helpers para abrir/cerrar vistas manipulando el historial
   const abrirFormulario = () => {
-      // Agregamos un estado "falso" al historial para que el botón atrás tenga algo que borrar
-      window.history.pushState({ view: 'formulario' }, '', '');
+      window.history.pushState({ view: 'formulario' }, '', '#formulario');
       setVista('formulario');
   };
 
   const cerrarFormulario = () => {
-      // En lugar de cambiar el estado directo, le decimos al navegador "vuelve atrás"
-      // Esto disparará el evento 'popstate' de arriba, cerrando la vista correctamente.
-      window.history.back();
+      if (window.location.hash === '#formulario') {
+          window.history.back();
+      } else {
+          setVista('lista');
+      }
   };
 
   const handleInput = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -137,6 +136,22 @@ export default function PacientesPage() {
     try {
         let urlFinal = formData.foto; 
 
+        // Limpieza de foto vieja si cambió
+        if (pacienteActivo && pacienteActivo.foto) {
+            const seCambioFoto = fotoFile !== null;
+            const seEliminoFoto = !formData.foto && !fotoFile;
+
+            if (seCambioFoto || seEliminoFoto) {
+                try {
+                    const fotoRef = ref(storage, pacienteActivo.foto);
+                    await deleteObject(fotoRef);
+                } catch (err) {
+                    console.warn("Foto antigua no encontrada o ya borrada");
+                }
+            }
+        }
+
+        // Subida de foto nueva
         if (fotoFile) {
             const storageRef = ref(storage, `pacientes/${Date.now()}_${fotoFile.name}`);
             const snapshot = await uploadBytes(storageRef, fotoFile);
@@ -156,11 +171,11 @@ export default function PacientesPage() {
             await addDoc(collection(db, "pacientes"), { ...payload, createdAt: new Date() });
         }
         
-        cerrarFormulario(); // Usamos la función inteligente que retrocede el historial
+        cerrarFormulario(); 
         resetForm();
     } catch (e) {
         console.error(e);
-        alert("Error al guardar imagen o datos");
+        alert("Error al guardar: " + e.message);
     } finally {
         setGuardando(false);
     }
@@ -178,7 +193,7 @@ export default function PacientesPage() {
       setFotoFile(null); 
       setVacunas(paciente.vacunas || []);
       
-      abrirFormulario(); // Usamos la función que agrega historial
+      abrirFormulario(); 
   };
 
   const resetForm = () => {
@@ -192,7 +207,8 @@ export default function PacientesPage() {
   const inputClass = "w-full p-3 border rounded-lg bg-gray-50 dark:bg-slate-700 text-gray-900 dark:text-white border-gray-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-blue-500 transition-all";
 
   return (
-    <div className="h-full flex flex-col relative bg-gray-50 dark:bg-slate-900 transition-colors">
+    // CORRECCIÓN: Usamos w-full y h-full explícitos para asegurar el layout
+    <div className="w-full h-full flex flex-col relative bg-gray-50 dark:bg-slate-900 transition-colors">
       
       {/* VISTA 1: LISTA */}
       {vista === 'lista' && (
@@ -233,9 +249,11 @@ export default function PacientesPage() {
                 <div className="h-24"></div>
             </main>
 
+            {/* BOTÓN FLOTANTE (FAB) CORREGIDO */}
             <button 
                 onClick={() => { resetForm(); abrirFormulario(); }}
-                className="absolute bottom-6 right-6 w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg flex items-center justify-center text-3xl font-bold hover:scale-110 active:scale-95 transition-transform z-30"
+                // Z-Index alto y bottom-8 para evitar cortes
+                className="absolute bottom-8 right-6 w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg flex items-center justify-center text-3xl font-bold hover:scale-110 active:scale-95 transition-transform z-50"
             >
                 +
             </button>
@@ -246,6 +264,7 @@ export default function PacientesPage() {
       {vista === 'formulario' && (
           <main className="flex-1 overflow-y-auto p-4 bg-gray-100 dark:bg-slate-900 relative">
             
+            {/* Barra de Acciones con tus ajustes manuales */}
             <div className="flex justify-between items-center -mt-14 mb-6 -mx-4 sticky -top-5 bg-gray-100 dark:bg-slate-900 z-20 py-2 border-b border-gray-200 dark:border-slate-800 shadow-sm">
                 <button onClick={cerrarFormulario} className="text-gray-500 dark:text-gray-400 font-medium px-2 py-1">Cancelar</button>
                 <h2 className="font-bold text-gray-700 dark:text-white">{pacienteActivo ? 'Editar' : 'Nuevo'}</h2>
@@ -258,7 +277,8 @@ export default function PacientesPage() {
                 </button>
             </div>
 
-            <div className="max-w-md mx-auto space-y-6 relative z-10">
+            {/* AQUÍ ESTÁ EL AJUSTE: mt-12 para empujar el contenido y que no se esconda la foto */}
+            <div className="max-w-md mx-auto space-y-6 relative z-10 mt-12">
                 
                 {/* FOTO */}
                 <div className="flex flex-col items-center justify-center gap-3">
@@ -293,6 +313,7 @@ export default function PacientesPage() {
 
                 {/* INFO BÁSICA */}
                 <div className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm space-y-3">
+                    {/* ... Resto del formulario igual ... */}
                     <h3 className="font-bold text-gray-700 dark:text-gray-200 border-b dark:border-slate-700 pb-2">Datos Paciente</h3>
                     <div className="grid grid-cols-2 gap-3">
                         <input name="nombre" placeholder="Nombre" value={formData.nombre} onChange={handleInput} className={inputClass} />
@@ -355,6 +376,15 @@ export default function PacientesPage() {
                     <button 
                         onClick={async () => {
                             if(confirm("¿Estás seguro de borrar este expediente completo?")) {
+                                try {
+                                    if (pacienteActivo.foto) {
+                                        const fotoRef = ref(storage, pacienteActivo.foto);
+                                        await deleteObject(fotoRef);
+                                    }
+                                } catch (error) {
+                                    console.warn("Error borrando foto (quizás ya no existe):", error);
+                                }
+                                
                                 await deleteDoc(doc(db, "pacientes", pacienteActivo.id));
                                 cerrarFormulario();
                             }

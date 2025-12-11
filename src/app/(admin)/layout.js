@@ -85,11 +85,19 @@ export default function AdminLayout({ children }) {
     const deltaX = currentX.current - startX.current;
     const deltaY = t.clientY - startY.current;
 
+    // DETECCIÓN INTELIGENTE SCROLL
     if (Math.abs(deltaY) > Math.abs(deltaX)) {
         isScrolling.current = true;
+        // CORRECCIÓN: Si ya habíamos movido un poco el panel, lo regresamos a 0 inmediatamente
+        const el = contentRef.current;
+        if (el) {
+            el.style.transition = 'transform 100ms ease-out';
+            el.style.transform = 'translateX(0)';
+        }
         return;
     }
 
+    // Límites
     if (deltaX > 0 && !getPrevPath()) return;
     if (deltaX < 0 && !getNextPath()) return;
 
@@ -97,10 +105,20 @@ export default function AdminLayout({ children }) {
     if (el) el.style.transform = `translateX(${deltaX}px)`;
   };
 
+  const resetSwipe = () => {
+    dragging.current = false;
+    isScrolling.current = false;
+    const el = contentRef.current;
+    if (el) {
+      el.style.transition = 'transform 200ms ease-out';
+      el.style.transform = 'translateX(0)';
+    }
+  };
+
   const onTouchEnd = () => {
     if (!dragging.current || isScrolling.current) {
-        dragging.current = false;
-        isScrolling.current = false;
+        // Aseguramos limpieza si soltamos mientras hacíamos scroll
+        resetSwipe();
         return;
     } 
 
@@ -116,13 +134,10 @@ export default function AdminLayout({ children }) {
         el.style.transition = 'transform 200ms ease-out';
         el.style.transform = `translateX(${delta < 0 ? -window.innerWidth : window.innerWidth}px)`;
       }
-      // CORRECCIÓN CLAVE: Usamos 'replace' en lugar de 'push'
       if (to) router.replace(to);
     } else {
-      if (el) {
-        el.style.transition = 'transform 200ms ease-out';
-        el.style.transform = 'translateX(0)';
-      }
+      // Snap back (regreso elástico)
+      resetSwipe();
     }
   };
 
@@ -159,12 +174,12 @@ export default function AdminLayout({ children }) {
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
+        onTouchCancel={resetSwipe} // NUEVO: Previene que se quede trabado si el navegador interrumpe
       >
         {children}
       </div>
 
       <nav className="fixed bottom-0 left-0 w-full bg-white dark:bg-slate-900 border-t border-gray-200 dark:border-slate-800 flex justify-around items-center h-16 z-50 pb-safe transition-colors">
-        {/* CORRECCIÓN EN LINKS: Agregamos replace={true} */}
         <Link 
           href="/dashboard" 
           replace={true}
