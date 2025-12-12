@@ -265,7 +265,7 @@ export default function PacientesPage() {
           <main className="flex-1 overflow-y-auto p-4 bg-gray-100 dark:bg-slate-900 relative">
             
             {/* Barra de Acciones con tus ajustes manuales */}
-            <div className="flex justify-between items-center -mt-14 mb-6 -mx-4 sticky -top-5 bg-gray-100 dark:bg-slate-900 z-20 py-2 border-b border-gray-200 dark:border-slate-800 shadow-sm">
+            <div className="flex justify-between items-center -mt-14 mb-6 -mx-4 sticky -top-4 bg-gray-100 dark:bg-slate-900 z-20 py-1 border-b border-gray-200 dark:border-slate-800 shadow-sm">
                 <button onClick={cerrarFormulario} className="text-gray-500 dark:text-gray-400 font-medium px-2 py-1">Cancelar</button>
                 <h2 className="font-bold text-gray-700 dark:text-white">{pacienteActivo ? 'Editar' : 'Nuevo'}</h2>
                 <button 
