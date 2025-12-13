@@ -253,7 +253,7 @@ export default function PacientesPage() {
             <button 
                 onClick={() => { resetForm(); abrirFormulario(); }}
                 // Z-Index alto y bottom-8 para evitar cortes
-                className="absolute bottom-8 right-6 w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg flex items-center justify-center text-3xl font-bold hover:scale-110 active:scale-95 transition-transform z-50"
+                className="absolute bottom-6 right-6 w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg flex items-center justify-center text-3xl font-bold hover:scale-110 active:scale-95 transition-transform z-50"
             >
                 +
             </button>
