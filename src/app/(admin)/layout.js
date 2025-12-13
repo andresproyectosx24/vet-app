@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/refs */
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
@@ -6,14 +7,18 @@ import Link from 'next/link';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 
+// 1. AGREGAMOS LA NUEVA RUTA AL ORDEN
 const PAGE_ORDER = {
   '/dashboard': 0,
   '/pacientes': 1,
+  '/atencion': 2, 
 };
 
+// 2. DEFINIMOS SU TÍTULO E ICONO
 const PAGE_INFO = {
   '/dashboard': { title: 'Agenda', icon: '📅' },
   '/pacientes': { title: 'Pacientes', icon: '🐶' },
+  '/atencion': { title: 'Atención', icon: '🩺' },
 };
 
 export default function AdminLayout({ children }) {
@@ -85,10 +90,8 @@ export default function AdminLayout({ children }) {
     const deltaX = currentX.current - startX.current;
     const deltaY = t.clientY - startY.current;
 
-    // DETECCIÓN INTELIGENTE SCROLL
     if (Math.abs(deltaY) > Math.abs(deltaX)) {
         isScrolling.current = true;
-        // CORRECCIÓN: Si ya habíamos movido un poco el panel, lo regresamos a 0 inmediatamente
         const el = contentRef.current;
         if (el) {
             el.style.transition = 'transform 100ms ease-out';
@@ -97,7 +100,6 @@ export default function AdminLayout({ children }) {
         return;
     }
 
-    // Límites
     if (deltaX > 0 && !getPrevPath()) return;
     if (deltaX < 0 && !getNextPath()) return;
 
@@ -117,7 +119,6 @@ export default function AdminLayout({ children }) {
 
   const onTouchEnd = () => {
     if (!dragging.current || isScrolling.current) {
-        // Aseguramos limpieza si soltamos mientras hacíamos scroll
         resetSwipe();
         return;
     } 
@@ -136,7 +137,6 @@ export default function AdminLayout({ children }) {
       }
       if (to) router.replace(to);
     } else {
-      // Snap back (regreso elástico)
       resetSwipe();
     }
   };
@@ -174,7 +174,7 @@ export default function AdminLayout({ children }) {
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
-        onTouchCancel={resetSwipe} // NUEVO: Previene que se quede trabado si el navegador interrumpe
+        onTouchCancel={resetSwipe}
       >
         {children}
       </div>
@@ -196,6 +196,16 @@ export default function AdminLayout({ children }) {
         >
           <span className="text-xl">🐶</span>
           <span className="text-[10px] font-bold mt-1">Pacientes</span>
+        </Link>
+
+        {/* 3. BOTÓN DE ATENCIÓN (NUEVO) */}
+        <Link 
+          href="/atencion" 
+          replace={true}
+          className={`flex flex-col items-center justify-center w-full h-full transition-colors ${pathname === '/atencion' ? 'text-green-600 dark:text-green-400' : 'text-gray-400 dark:text-gray-500'}`}
+        >
+           <span className="text-xl">🩺</span>
+           <span className="text-[10px] font-bold mt-1">Atención</span>
         </Link>
       </nav>
     </div>

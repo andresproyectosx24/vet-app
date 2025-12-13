@@ -1,8 +1,8 @@
+/* eslint-disable @next/next/no-img-element */
 'use client';
 
-import { useState, useEffect } from 'react'; // Agregamos useEffect
+import { useState, useEffect } from 'react'; 
 import { db, storage } from '../../lib/firebase'; 
-// Agregamos onSnapshot para escuchar cambios en vivo
 import { doc, updateDoc, arrayUnion, arrayRemove, onSnapshot } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 
@@ -50,7 +50,6 @@ const comprimirImagen = (archivo) => {
 };
 
 export default function CartillaView({ paciente: pacienteInicial, onBack }) {
-  // Estado local para mantener los datos frescos
   const [pacienteEnVivo, setPacienteEnVivo] = useState(pacienteInicial);
   
   const [agregando, setAgregando] = useState(false);
@@ -68,15 +67,12 @@ export default function CartillaView({ paciente: pacienteInicial, onBack }) {
   const [fotoPreview, setFotoPreview] = useState(null);
   const [fotoFile, setFotoFile] = useState(null);
 
-  // --- EFECTO: ESCUCHAR CAMBIOS EN TIEMPO REAL ---
-  // Esto hace que la cartilla se actualice sola apenas guardas, sin depender del padre
   useEffect(() => {
     if (!pacienteInicial?.id) return;
 
     const docRef = doc(db, "pacientes", pacienteInicial.id);
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
         if (docSnap.exists()) {
-            // Actualizamos la vista con la data más reciente de la base de datos
             setPacienteEnVivo({ id: docSnap.id, ...docSnap.data() });
         }
     });
@@ -131,7 +127,6 @@ export default function CartillaView({ paciente: pacienteInicial, onBack }) {
 
       setAgregando(false);
       resetForm();
-      // No necesitamos hacer nada más, el useEffect detectará el cambio y actualizará la lista
     } catch (e) {
       console.error(e);
       alert("Error al guardar vacuna");
@@ -165,7 +160,6 @@ export default function CartillaView({ paciente: pacienteInicial, onBack }) {
     setExpandirOpcionales(false);
   };
 
-  // Usamos pacienteEnVivo (el dato fresco) en lugar de la prop inicial
   const listaVacunas = (pacienteEnVivo.vacunas || []).sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
 
   return (
@@ -248,7 +242,13 @@ export default function CartillaView({ paciente: pacienteInicial, onBack }) {
                 )}
 
                 <div className="flex gap-3 mt-6">
-                    <button onClick={() => {setAgregando(false); resetForm();}} className="flex-1 py-3 text-gray-500 dark:text-gray-400 font-bold bg-gray-100 dark:bg-slate-700 rounded-lg">Cancelar</button>
+                    {/* CAMBIO 1: Botón cancelar rojo */}
+                    <button 
+                        onClick={() => {setAgregando(false); resetForm();}} 
+                        className="flex-1 py-3 text-red-600 dark:text-red-400 font-bold bg-red-100 dark:bg-red-900/30 rounded-lg border border-red-200 dark:border-red-900"
+                    >
+                        Cancelar
+                    </button>
                     <button onClick={guardarVacuna} disabled={guardando} className="flex-1 py-3 text-white font-bold bg-green-600 hover:bg-green-700 rounded-lg shadow-lg">
                         {guardando ? 'Guardando...' : 'Registrar Vacuna'}
                     </button>
@@ -268,7 +268,8 @@ export default function CartillaView({ paciente: pacienteInicial, onBack }) {
 
             {listaVacunas.map((vacuna) => (
                 <div key={vacuna.id} className="relative pl-10 z-10 group">
-                    <div className="absolute left-[13px] top-4 w-2.5 h-2.5 bg-purple-500 rounded-full border-2 border-white dark:border-slate-900 shadow-sm"></div>
+                    {/* CAMBIO 2: Alineación perfecta de la bolita (left-[12px]) */}
+                    <div className="absolute left-[12px] top-4 w-2.5 h-2.5 bg-purple-500 rounded-full border-2 border-white dark:border-slate-900 shadow-sm"></div>
 
                     <div className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-slate-700/50">
                         <div className="flex justify-between items-start">
