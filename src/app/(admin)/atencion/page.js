@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { db, storage, auth } from '../../../lib/firebase'; 
-// Quitamos orderBy de los imports porque lo haremos manual
-import { collection, doc, query, where, onSnapshot, updateDoc, arrayUnion, addDoc } from 'firebase/firestore';
+import { collection, doc, query, orderBy, where, onSnapshot, updateDoc, arrayUnion, addDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 // --- UTILIDAD: COMPRESIÓN DE IMÁGENES ---
@@ -49,31 +48,26 @@ function SelectorInicial({ onSelect }) {
   const [pacientes, setPacientes] = useState([]);
   const [busqueda, setBusqueda] = useState('');
 
-  // CORRECCIÓN: Quitamos orderBy("hora") de la query para evitar el error de índice compuesto
+  // Cargar Citas de Hoy (Manual Sort para evitar errores de índice)
   useEffect(() => {
     const hoy = getTodayStr();
     const q = query(collection(db, "citas"), where("fechaSolo", "==", hoy));
     
     const unsub = onSnapshot(q, snap => {
         let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        
-        // Filtramos y Ordenamos manualmente en Javascript
         docs = docs
             .filter(c => c.estado !== 'finalizada')
-            .sort((a, b) => a.hora.localeCompare(b.hora)); // Ordenar por hora (texto)
-            
+            .sort((a, b) => a.hora.localeCompare(b.hora));
         setCitasHoy(docs);
     });
     return () => unsub();
   }, []);
 
-  // Carga de Pacientes (Aquí el orderBy("nombre") suele funcionar bien si el índice simple existe)
+  // Cargar Todos los Pacientes
   useEffect(() => {
-    // Si falla también aquí, quitaremos el orderBy y ordenaremos con .sort()
-    const q = query(collection(db, "pacientes")); // Intento sin order by para máxima seguridad
+    const q = query(collection(db, "pacientes"));
     const unsub = onSnapshot(q, snap => {
         let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        // Orden manual alfabético
         docs.sort((a, b) => a.nombre.localeCompare(b.nombre));
         setPacientes(docs);
     });
@@ -97,6 +91,9 @@ function SelectorInicial({ onSelect }) {
       onSelect({ id: docRef.id, nombre, dueño: dueno, vacunas: [], historial: [] }, null);
   };
 
+  // Helper para comparar textos suavemente
+  const cleanStr = (str) => str ? str.toLowerCase().trim() : '';
+
   return (
     <div className="flex flex-col h-full bg-gray-50 dark:bg-slate-900 p-4">
       <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-4">Sala de Espera</h1>
@@ -110,9 +107,18 @@ function SelectorInicial({ onSelect }) {
                       <div 
                         key={cita.id} 
                         onClick={() => {
-                            const pacienteReal = pacientes.find(p => p.nombre === cita.mascota && p.dueño === cita.dueño);
-                            if (pacienteReal) onSelect(pacienteReal, cita.id);
-                            else alert("No se encontró el expediente. Créalo abajo.");
+                            // Búsqueda inteligente: ignora mayúsculas y espacios extra
+                            const pacienteReal = pacientes.find(p => 
+                                cleanStr(p.nombre) === cleanStr(cita.mascota) && 
+                                cleanStr(p.dueño) === cleanStr(cita.dueño)
+                            );
+                            
+                            if (pacienteReal) {
+                                onSelect(pacienteReal, cita.id);
+                            } else {
+                                alert("No encontré el expediente exacto. Búscalo manualmente abajo.");
+                                setBusqueda(cita.mascota); // Auto-llenar el buscador para ayudar
+                            }
                         }}
                         className="min-w-[160px] bg-white dark:bg-slate-800 p-3 rounded-xl shadow-sm border-l-4 border-blue-500 cursor-pointer snap-center active:scale-95 transition-transform"
                       >
@@ -146,15 +152,30 @@ function SelectorInicial({ onSelect }) {
                 </div>
             )}
 
-            {pacientesFiltrados.map(p => (
-              <div key={p.id} onClick={() => onSelect(p, null)} className="bg-white dark:bg-slate-800 p-3 rounded-lg shadow-sm flex justify-between items-center cursor-pointer active:bg-gray-100 dark:active:bg-slate-700">
-                <div>
-                  <h3 className="font-bold text-gray-900 dark:text-white">{p.nombre}</h3>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{p.raza} • {p.dueño}</p>
-                </div>
-                <span className="text-xl text-gray-300">➜</span>
-              </div>
-            ))}
+            {pacientesFiltrados.map(p => {
+              // INTELIGENCIA: Verificar si este paciente tiene cita hoy, aunque lo busquemos manualmente
+              const citaDeHoy = citasHoy.find(c => 
+                  cleanStr(c.mascota) === cleanStr(p.nombre) && 
+                  cleanStr(c.dueño) === cleanStr(p.dueño)
+              );
+
+              return (
+                  <div 
+                    key={p.id} 
+                    onClick={() => onSelect(p, citaDeHoy ? citaDeHoy.id : null)} 
+                    className={`bg-white dark:bg-slate-800 p-3 rounded-lg shadow-sm flex justify-between items-center cursor-pointer active:bg-gray-100 dark:active:bg-slate-700 ${citaDeHoy ? 'border border-blue-400' : ''}`}
+                  >
+                    <div>
+                      <h3 className="font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                          {p.nombre}
+                          {citaDeHoy && <span className="text-[10px] bg-blue-100 text-blue-600 px-2 rounded-full">TIENE CITA HOY</span>}
+                      </h3>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">{p.raza} • {p.dueño}</p>
+                    </div>
+                    <span className="text-xl text-gray-300">➜</span>
+                  </div>
+              );
+            })}
           </div>
       </div>
     </div>
@@ -168,14 +189,13 @@ function Workspace({ paciente, citaId, onExit }) {
   const [modo, setModo] = useState('consulta'); 
   const [avanzado, setAvanzado] = useState(false); 
   const [guardando, setGuardando] = useState(false);
-  const [expandirVacuna, setExpandirVacuna] = useState(false); // Opcionales de vacuna
+  const [expandirVacuna, setExpandirVacuna] = useState(false); 
 
-  // Estados de Fotos
-  const [hallazgosFoto, setHallazgosFoto] = useState(null); // File
-  const [hallazgosPreview, setHallazgosPreview] = useState(null); // URL
+  const [hallazgosFoto, setHallazgosFoto] = useState(null); 
+  const [hallazgosPreview, setHallazgosPreview] = useState(null); 
   
-  const [vacunaFoto, setVacunaFoto] = useState(null); // File
-  const [vacunaPreview, setVacunaPreview] = useState(null); // URL
+  const [vacunaFoto, setVacunaFoto] = useState(null); 
+  const [vacunaPreview, setVacunaPreview] = useState(null); 
 
   const [form, setForm] = useState({
     peso: paciente.peso || '',
@@ -196,20 +216,15 @@ function Workspace({ paciente, citaId, onExit }) {
   const [medicamentos, setMedicamentos] = useState([]);
   const [medTemp, setMedTemp] = useState({ nombre: '', dosis: '', frecuencia: '', duracion: '' });
 
-  // BLOQUEO DE SWIPE Y NAVEGACIÓN
   const bloquearSwipe = (e) => e.stopPropagation();
 
   useEffect(() => {
-      // Push state al montar para interceptar el botón Atrás
       window.history.pushState({ view: 'workspace' }, '', '#workspace');
-      
       const handleBack = () => onExit();
       window.addEventListener('popstate', handleBack);
-      
       return () => window.removeEventListener('popstate', handleBack);
   }, []);
 
-  // Helpers de Fotos
   const procesarFoto = async (e, setFile, setPreview, autoExpand = false) => {
       const file = e.target.files[0];
       if (file) {
@@ -243,7 +258,6 @@ function Workspace({ paciente, citaId, onExit }) {
           let urlHallazgos = null;
           let urlVacuna = null;
 
-          // 1. SUBIR FOTOS SI EXISTEN
           if (hallazgosFoto) {
               const refH = ref(storage, `pacientes/${paciente.id}/historial/${Date.now()}_h.jpg`);
               const snapH = await uploadBytes(refH, hallazgosFoto);
@@ -255,7 +269,6 @@ function Workspace({ paciente, citaId, onExit }) {
               urlVacuna = await getDownloadURL(snapV.ref);
           }
 
-          // 2. OBJETO CONSULTA
           if (modo === 'consulta') {
               const consultaData = {
                   fecha: timestamp,
@@ -263,7 +276,7 @@ function Workspace({ paciente, citaId, onExit }) {
                   peso: form.peso,
                   motivo: form.motivo || 'Revisión General',
                   hallazgos: form.anamnesis,
-                  fotoHallazgos: urlHallazgos, // Foto guardada
+                  fotoHallazgos: urlHallazgos, 
                   diagnostico: form.diagnostico,
                   tratamiento: avanzado ? medicamentos : form.tratamientoTexto,
                   notas: form.notas,
@@ -272,15 +285,14 @@ function Workspace({ paciente, citaId, onExit }) {
               batchUpdate.historial = arrayUnion(consultaData);
           }
 
-          // 3. OBJETO VACUNA (Nivel 1 + Nivel 2)
           if (modo === 'vacuna' || (modo === 'consulta' && vacunaForm.nombre)) {
               const nuevaVacuna = {
                   id: Date.now().toString(),
                   nombre: vacunaForm.nombre,
                   fecha: vacunaForm.fecha,
                   proxima: vacunaForm.proxima || null,
-                  observaciones: vacunaForm.observaciones || null, // Campo extra manual
-                  foto: urlVacuna, // Foto de la etiqueta
+                  observaciones: vacunaForm.observaciones || null, 
+                  foto: urlVacuna, 
                   creadoEl: timestamp
               };
               batchUpdate.vacunas = arrayUnion(nuevaVacuna);
@@ -300,9 +312,13 @@ function Workspace({ paciente, citaId, onExit }) {
 
           // GUARDAR
           await updateDoc(doc(db, "pacientes", paciente.id), batchUpdate);
-          if (citaId) await updateDoc(doc(db, "citas", citaId), { estado: 'finalizada' });
+          
+          // CERRAR CITA (Si existe)
+          if (citaId) {
+              await updateDoc(doc(db, "citas", citaId), { estado: 'finalizada' });
+              console.log("Cita cerrada:", citaId);
+          }
 
-          // Regresar (back elimina el estado fantasma del historial)
           window.history.back(); 
 
       } catch (e) {
@@ -335,15 +351,12 @@ function Workspace({ paciente, citaId, onExit }) {
 
       <div className="flex-1 overflow-y-auto p-4 pb-24">
         
-        {/* TABS */}
         <div className="flex p-1 bg-gray-200 dark:bg-slate-800 rounded-xl mb-6">
             <button onClick={() => setModo('consulta')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${modo === 'consulta' ? 'bg-white dark:bg-slate-700 shadow text-green-600' : 'text-gray-500'}`}>🩺 Consulta</button>
             <button onClick={() => setModo('vacuna')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${modo === 'vacuna' ? 'bg-white dark:bg-slate-700 shadow text-purple-600' : 'text-gray-500'}`}>💉 Solo Vacuna</button>
         </div>
 
-        {/* --- FORMULARIO --- */}
         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
-            
             {modo === 'consulta' && (
                 <>
                     <div className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm">
@@ -353,7 +366,6 @@ function Workspace({ paciente, citaId, onExit }) {
                         <label className={labelClass}>Hallazgos Clínicos / Fotos</label>
                         <textarea name="anamnesis" value={form.anamnesis} onChange={handleInput} rows="3" placeholder="Temp, FC, FR..." className={inputClass} />
                         
-                        {/* FOTO HALLAZGOS */}
                         <div className="mt-2 flex items-center gap-3">
                             <label className="bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-2 cursor-pointer">
                                 📷 Agregar Foto
@@ -382,7 +394,6 @@ function Workspace({ paciente, citaId, onExit }) {
                             <textarea name="tratamientoTexto" value={form.tratamientoTexto} onChange={handleInput} rows="4" className={inputClass} />
                         ) : (
                             <div className="space-y-3 bg-gray-50 dark:bg-slate-700/50 p-3 rounded-lg">
-                                {/* ...Inputs medicamentos... */}
                                 <div className="grid grid-cols-2 gap-2">
                                     <input placeholder="Medicamento" value={medTemp.nombre} onChange={e => setMedTemp({...medTemp, nombre: e.target.value})} className="p-2 rounded border text-sm" />
                                     <input placeholder="Dosis" value={medTemp.dosis} onChange={e => setMedTemp({...medTemp, dosis: e.target.value})} className="p-2 rounded border text-sm" />
@@ -395,40 +406,22 @@ function Workspace({ paciente, citaId, onExit }) {
                 </>
             )}
 
-            {/* SECCIÓN VACUNA */}
             {(modo === 'vacuna' || modo === 'consulta') && (
                 <div className={`p-4 rounded-xl border transition-colors ${modo === 'vacuna' ? 'bg-white dark:bg-slate-800 border-gray-200' : 'bg-purple-50 dark:bg-slate-800/50 border-purple-100'}`}>
                     <label className="text-xs font-bold text-purple-600 uppercase mb-2 block">{modo === 'vacuna' ? 'Datos de Vacunación' : '¿Se aplicó vacuna?'}</label>
-                    
                     <input name="nombre" value={vacunaForm.nombre} onChange={handleVacuna} placeholder="Nombre de vacuna" className={inputClass} />
-                    
                     {(modo === 'vacuna' || vacunaForm.nombre) && (
                         <div className="mt-3 space-y-3 animate-in fade-in">
                             <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className={labelClass}>Fecha</label>
-                                    <input type="date" name="fecha" value={vacunaForm.fecha} onChange={handleVacuna} className={inputClass} />
-                                </div>
-                                <div>
-                                    <label className={labelClass}>Próxima</label>
-                                    <input type="date" name="proxima" value={vacunaForm.proxima} onChange={handleVacuna} className={inputClass} />
-                                </div>
+                                <div><label className={labelClass}>Fecha</label><input type="date" name="fecha" value={vacunaForm.fecha} onChange={handleVacuna} className={inputClass} /></div>
+                                <div><label className={labelClass}>Próxima</label><input type="date" name="proxima" value={vacunaForm.proxima} onChange={handleVacuna} className={inputClass} /></div>
                             </div>
-
-                            <button onClick={() => setExpandirVacuna(!expandirVacuna)} className="text-xs font-bold text-gray-400 flex items-center gap-1">
-                                {expandirVacuna ? '▼ Ocultar Detalles' : '▶ Agregar Evidencia / Notas'}
-                            </button>
-
+                            <button onClick={() => setExpandirVacuna(!expandirVacuna)} className="text-xs font-bold text-gray-400 flex items-center gap-1">{expandirVacuna ? '▼ Ocultar Detalles' : '▶ Agregar Evidencia / Notas'}</button>
                             {expandirVacuna && (
                                 <div className="bg-gray-100 dark:bg-slate-700/50 p-3 rounded-lg space-y-3">
                                     <div className="flex items-center gap-4">
-                                        <div className="w-16 h-16 bg-gray-200 rounded overflow-hidden flex-shrink-0 flex items-center justify-center">
-                                            {vacunaPreview ? <img src={vacunaPreview} className="w-full h-full object-cover" /> : <span className="text-xl">📷</span>}
-                                        </div>
-                                        <label className="bg-blue-600 text-white text-xs px-3 py-2 rounded-lg font-bold cursor-pointer shadow-sm">
-                                            FOTO ETIQUETA
-                                            <input type="file" accept="image/*" capture="environment" onChange={(e) => procesarFoto(e, setVacunaFoto, setVacunaPreview)} className="hidden" />
-                                        </label>
+                                        <div className="w-16 h-16 bg-gray-200 rounded overflow-hidden flex-shrink-0 flex items-center justify-center">{vacunaPreview ? <img src={vacunaPreview} className="w-full h-full object-cover" /> : <span className="text-xl">📷</span>}</div>
+                                        <label className="bg-blue-600 text-white text-xs px-3 py-2 rounded-lg font-bold cursor-pointer shadow-sm">FOTO ETIQUETA<input type="file" accept="image/*" capture="environment" onChange={(e) => procesarFoto(e, setVacunaFoto, setVacunaPreview)} className="hidden" /></label>
                                     </div>
                                     <textarea name="observaciones" value={vacunaForm.observaciones} onChange={handleVacuna} placeholder="Lote, observaciones extra..." className="w-full p-2 text-sm rounded border border-gray-300 dark:border-slate-600 outline-none" rows="2" />
                                 </div>
@@ -446,21 +439,14 @@ function Workspace({ paciente, citaId, onExit }) {
             )}
         </div>
 
-        <button 
-            onClick={finalizarAtencion}
-            disabled={guardando}
-            className="w-full py-4 bg-green-600 text-white font-bold rounded-xl shadow-lg hover:bg-green-700 transition-transform active:scale-95 text-lg mt-6 mb-10"
-        >
-            {guardando ? 'Guardando...' : 'Finalizar Atención'}
-        </button>
-
+        <button onClick={finalizarAtencion} disabled={guardando} className="w-full py-4 bg-green-600 text-white font-bold rounded-xl shadow-lg hover:bg-green-700 transition-transform active:scale-95 text-lg mt-6 mb-10">{guardando ? 'Guardando...' : 'Finalizar Atención'}</button>
       </div>
     </div>
   );
 }
 
 // ==========================================
-// 3. PÁGINA PRINCIPAL (Router de Vistas)
+// 3. PÁGINA PRINCIPAL
 // ==========================================
 export default function AtencionPage() {
   const [pacienteSeleccionado, setPacienteSeleccionado] = useState(null);

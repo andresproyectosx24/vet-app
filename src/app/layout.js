@@ -27,9 +27,11 @@ export const viewport = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="es">
-      <body className="antialiased bg-gray-50 dark:bg-slate-900 text-gray-900 dark:text-white">
-        {children}
+    <html lang="es" className="h-dvh">
+      <body className="h-dvh flex flex-col antialiased bg-gray-50 dark:bg-slate-900 text-gray-900 dark:text-white">
+        <main className="flex-1 overflow-hidden">
+          {children}
+        </main>
       </body>
     </html>
   );
