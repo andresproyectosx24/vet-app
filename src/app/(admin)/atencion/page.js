@@ -5,7 +5,7 @@ import { db, storage, auth } from '../../../lib/firebase';
 import { collection, doc, query, orderBy, where, onSnapshot, updateDoc, arrayUnion, addDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
-// --- UTILIDAD: COMPRESIÓN DE IMÁGENES ---
+// --- UTILIDAD: COMPRESIÓN DE IMÁGENES (Local) ---
 const comprimirImagen = (archivo) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -74,9 +74,11 @@ function SelectorInicial({ onSelect }) {
     return () => unsub();
   }, []);
 
+  // FILTRO INTELIGENTE: Oculta pacientes archivados (activo === false)
   const pacientesFiltrados = pacientes.filter(p => 
-    p.nombre.toLowerCase().includes(busqueda.toLowerCase()) || 
-    p.dueño.toLowerCase().includes(busqueda.toLowerCase())
+    p.activo !== false && // <--- ESTA LÍNEA OCULTA LOS ARCHIVADOS
+    (p.nombre.toLowerCase().includes(busqueda.toLowerCase()) || 
+    p.dueño.toLowerCase().includes(busqueda.toLowerCase()))
   );
 
   const crearYAtender = async () => {
@@ -86,7 +88,7 @@ function SelectorInicial({ onSelect }) {
       if(!dueno) return;
 
       const docRef = await addDoc(collection(db, "pacientes"), {
-          nombre, dueño: dueno, especie: 'perro', fechaRegistro: new Date().toISOString(), vacunas: [], historial: []
+          nombre, dueño: dueno, especie: 'perro', fechaRegistro: new Date().toISOString(), vacunas: [], historial: [], activo: true
       });
       onSelect({ id: docRef.id, nombre, dueño: dueno, vacunas: [], historial: [] }, null);
   };
@@ -114,7 +116,12 @@ function SelectorInicial({ onSelect }) {
                             );
                             
                             if (pacienteReal) {
-                                onSelect(pacienteReal, cita.id);
+                                // Seguridad extra: Si el paciente de la cita está archivado, avisar.
+                                if (pacienteReal.activo === false) {
+                                    alert("Este paciente está archivado. Restauralo en la sección de Pacientes para atenderlo.");
+                                } else {
+                                    onSelect(pacienteReal, cita.id);
+                                }
                             } else {
                                 alert("No encontré el expediente exacto. Búscalo manualmente abajo.");
                                 setBusqueda(cita.mascota); // Auto-llenar el buscador para ayudar
@@ -148,7 +155,7 @@ function SelectorInicial({ onSelect }) {
                     onClick={crearYAtender}
                     className="p-4 rounded-xl border-2 border-dashed border-blue-300 dark:border-blue-700 text-blue-500 text-center cursor-pointer active:bg-blue-50 dark:active:bg-blue-900/20"
                 >
-                    No existe &quot;{busqueda}&quot;. <br/><b>+ Tocar para Crear y Atender</b>
+                    No existe &ldquo;{busqueda}&rdquo;. <br/><b>+ Tocar para Crear y Atender</b>
                 </div>
             )}
 
@@ -216,6 +223,7 @@ function Workspace({ paciente, citaId, onExit }) {
   const [medicamentos, setMedicamentos] = useState([]);
   const [medTemp, setMedTemp] = useState({ nombre: '', dosis: '', frecuencia: '', duracion: '' });
 
+  // Helper para bloquear swipe
   const bloquearSwipe = (e) => e.stopPropagation();
 
   useEffect(() => {
@@ -316,7 +324,6 @@ function Workspace({ paciente, citaId, onExit }) {
           // CERRAR CITA (Si existe)
           if (citaId) {
               await updateDoc(doc(db, "citas", citaId), { estado: 'finalizada' });
-              console.log("Cita cerrada:", citaId);
           }
 
           window.history.back(); 
@@ -351,12 +358,15 @@ function Workspace({ paciente, citaId, onExit }) {
 
       <div className="flex-1 overflow-y-auto p-4 pb-24">
         
+        {/* TABS */}
         <div className="flex p-1 bg-gray-200 dark:bg-slate-800 rounded-xl mb-6">
             <button onClick={() => setModo('consulta')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${modo === 'consulta' ? 'bg-white dark:bg-slate-700 shadow text-green-600' : 'text-gray-500'}`}>🩺 Consulta</button>
             <button onClick={() => setModo('vacuna')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${modo === 'vacuna' ? 'bg-white dark:bg-slate-700 shadow text-purple-600' : 'text-gray-500'}`}>💉 Solo Vacuna</button>
         </div>
 
+        {/* --- FORMULARIO --- */}
         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
+            
             {modo === 'consulta' && (
                 <>
                     <div className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm">

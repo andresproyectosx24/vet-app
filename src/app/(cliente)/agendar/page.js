@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
-// Usamos ruta relativa para asegurar compatibilidad
-import { db } from '../../../lib/firebase'; 
+import { db, storage } from '../../../lib/firebase'; 
 import { collection, addDoc, query, where, onSnapshot, getDocs } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+// Importamos la utilidad de compresión que ya creaste
+import { comprimirImagen } from '../../../utils/compressor'; 
 
 const HORARIOS_DISPONIBLES = [
   "09:00", "10:00", "11:00", "12:00", 
@@ -16,7 +17,7 @@ export default function AgendarPage() {
   const [modo, setModo] = useState('nuevo'); // 'nuevo' | 'recurrente'
   const [estado, setEstado] = useState('esperando');
   const [buscandoPaciente, setBuscandoPaciente] = useState(false);
-  const [pacienteEncontrado, setPacienteEncontrado] = useState(null); // Datos del paciente encontrado
+  const [pacienteEncontrado, setPacienteEncontrado] = useState(null); 
 
   // --- DATOS DEL DUEÑO ---
   const [nombreDueno, setNombreDueno] = useState('');
@@ -27,7 +28,10 @@ export default function AgendarPage() {
   const [especie, setEspecie] = useState('perro');
   const [raza, setRaza] = useState('');
   const [edad, setEdad] = useState('');
-  const [peso, setPeso] = useState(''); 
+  
+  // FOTO (NUEVO)
+  const [fotoFile, setFotoFile] = useState(null);
+  const [fotoPreview, setFotoPreview] = useState(null);
 
   // --- DATOS CITA ---
   const [fecha, setFecha] = useState('');
@@ -50,15 +54,11 @@ export default function AgendarPage() {
     return () => unsubscribe();
   }, [fecha]);
 
-  // --- BUSCADOR DE PACIENTE (NUEVO) ---
   const buscarPaciente = async () => {
       if(!telefono || !nombreMascota) return alert("Ingresa tu teléfono y el nombre de tu mascota");
       
       setBuscandoPaciente(true);
       try {
-          // Buscamos coincidencia exacta de Teléfono + Nombre
-          // Nota: Firestore es sensible a mayúsculas, idealmente guardaríamos un campo 'keywords' en minúsculas,
-          // pero por ahora haremos una búsqueda simple y luego filtraremos en cliente para ser flexibles.
           const q = query(collection(db, "pacientes"), where("telefono", "==", telefono.trim()));
           const snapshot = await getDocs(q);
           
@@ -72,7 +72,6 @@ export default function AgendarPage() {
 
           if (encontrado) {
               setPacienteEncontrado(encontrado);
-              // Auto-llenar estados para que al guardar la cita tenga datos
               setNombreDueno(encontrado.dueño);
               setEspecie(encontrado.especie);
               setRaza(encontrado.raza);
@@ -88,8 +87,21 @@ export default function AgendarPage() {
       }
   };
 
+  const handleFoto = async (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      try {
+        const comprimido = await comprimirImagen(file);
+        setFotoFile(comprimido);
+        setFotoPreview(URL.createObjectURL(comprimido));
+      } catch (err) {
+        console.error(err);
+        alert("Error al procesar imagen");
+      }
+    }
+  };
+
   const crearCita = async () => {
-    // Si es recurrente, usamos los datos del encontrado. Si es nuevo, valida todo.
     if(!pacienteEncontrado && (!nombreMascota || !nombreDueno || !telefono)) {
         alert("Faltan datos obligatorios (*)");
         return;
@@ -102,12 +114,10 @@ export default function AgendarPage() {
     try {
       setEstado('guardando');
 
-      // 0. LIMPIEZA
       const nombreLimpio = nombreMascota.trim();
       const telefonoLimpio = telefono.trim();
       const duenoLimpio = pacienteEncontrado ? pacienteEncontrado.dueño : nombreDueno.trim();
       
-      // 1. SEGURIDAD: Verificar disponibilidad
       const qCheck = query(
         collection(db, "citas"),
         where("fechaSolo", "==", fecha),
@@ -122,7 +132,15 @@ export default function AgendarPage() {
         return;
       }
 
-      // 2. SINCRONIZACIÓN AUTOMÁTICA (Solo si es modo NUEVO)
+      // SUBIR FOTO SI EXISTE (Solo para nuevos)
+      let urlFoto = null;
+      if (modo === 'nuevo' && fotoFile) {
+         const storageRef = ref(storage, `pacientes/nuevos/${Date.now()}_${fotoFile.name}`);
+         const snapshot = await uploadBytes(storageRef, fotoFile);
+         urlFoto = await getDownloadURL(snapshot.ref);
+      }
+
+      // 2. CREAR PACIENTE SI ES NUEVO
       if (modo === 'nuevo' && !pacienteEncontrado) {
           const qPaciente = query(
             collection(db, "pacientes"),
@@ -138,11 +156,12 @@ export default function AgendarPage() {
             await addDoc(collection(db, "pacientes"), {
                 nombre: nombreLimpio,
                 especie: especie,
-                raza: raza || 'Desconocido',
+                raza: raza || (especie === 'otro' ? 'No especificado' : 'Desconocido'),
                 edad: edad || 'No especificada',
                 peso: '', 
                 dueño: duenoLimpio,
                 telefono: telefonoLimpio,
+                foto: urlFoto, // Guardamos la foto en el perfil
                 notas: 'Generado automáticamente desde Cita Web',
                 vacunas: [], 
                 createdAt: new Date()
@@ -158,7 +177,6 @@ export default function AgendarPage() {
         telefono: telefonoLimpio,
         mascota: nombreLimpio,
         especie: pacienteEncontrado ? pacienteEncontrado.especie : especie,
-        // Si es recurrente, usamos los datos que ya tenemos. Si es nuevo, los del form.
         raza: pacienteEncontrado ? pacienteEncontrado.raza : (raza || 'Desconocido'),
         edad: pacienteEncontrado ? pacienteEncontrado.edad : (edad || 'No especificada'),
         
@@ -167,7 +185,7 @@ export default function AgendarPage() {
         hora: horaSeleccionada, 
         motivo: "Cita web",
         estado: "pendiente",
-        pacienteId: pacienteEncontrado ? pacienteEncontrado.id : null // Vinculamos ID si existe
+        pacienteId: pacienteEncontrado ? pacienteEncontrado.id : null
       });
 
       setEstado('exito');
@@ -175,6 +193,7 @@ export default function AgendarPage() {
       setNombreMascota(''); setEspecie('perro'); setRaza(''); setEdad(''); setPeso('');
       setNombreDueno(''); setTelefono('');
       setFecha(''); setHoraSeleccionada('');
+      setFotoFile(null); setFotoPreview(null);
       setPacienteEncontrado(null);
       alert("¡Cita agendada correctamente!");
       
@@ -186,6 +205,9 @@ export default function AgendarPage() {
   };
 
   const inputClass = "w-full p-2 border rounded bg-gray-50 dark:bg-slate-700 text-gray-900 dark:text-white border-gray-200 dark:border-slate-600 focus:ring-2 focus:ring-blue-500 outline-none transition-colors";
+
+  // Lógica para etiquetas dinámicas
+  const esOtro = especie === 'otro';
 
   return (
     <div className="h-[100dvh] flex flex-col overflow-hidden">
@@ -226,11 +248,7 @@ export default function AgendarPage() {
                         <label className="text-xs font-bold text-gray-500 dark:text-gray-400">Nombre Mascota</label>
                         <input type="text" value={nombreMascota} onChange={(e) => setNombreMascota(e.target.value)} className={inputClass} placeholder="Ej. Firulais" />
                     </div>
-                    <button 
-                        onClick={buscarPaciente} 
-                        disabled={buscandoPaciente}
-                        className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition"
-                    >
+                    <button onClick={buscarPaciente} disabled={buscandoPaciente} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition">
                         {buscandoPaciente ? 'Buscando...' : 'Buscar Expediente'}
                     </button>
                 </div>
@@ -239,7 +257,13 @@ export default function AgendarPage() {
             {/* --- ÉXITO: PACIENTE ENCONTRADO --- */}
             {pacienteEncontrado && (
                 <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-xl border border-green-200 dark:border-green-800 text-center animate-in zoom-in">
-                    <span className="text-3xl">🐶</span>
+                    <div className="w-20 h-20 bg-green-100 rounded-full mx-auto mb-2 overflow-hidden flex items-center justify-center">
+                        {pacienteEncontrado.foto ? (
+                             <img src={pacienteEncontrado.foto} className="w-full h-full object-cover" />
+                        ) : (
+                             <span className="text-3xl">🐶</span>
+                        )}
+                    </div>
                     <h3 className="font-bold text-green-700 dark:text-green-400 mt-2">¡Hola, {pacienteEncontrado.nombre}!</h3>
                     <p className="text-xs text-green-600 dark:text-green-300">Dueño: {pacienteEncontrado.dueño}</p>
                     <button onClick={() => setPacienteEncontrado(null)} className="text-xs text-gray-400 underline mt-2">No soy yo</button>
@@ -249,7 +273,22 @@ export default function AgendarPage() {
             {/* --- MODO NUEVO (FORMULARIO COMPLETO) --- */}
             {modo === 'nuevo' && (
                 <div className="space-y-4 animate-in fade-in">
-                    {/* SECCIÓN 1: ¿QUIÉN VIENE? */}
+                    
+                    {/* FOTO OPCIONAL */}
+                    <div className="flex justify-center mb-4">
+                        <label className="flex flex-col items-center gap-2 cursor-pointer group">
+                            <div className="w-20 h-20 rounded-full bg-gray-100 dark:bg-slate-700 border-2 border-dashed border-gray-300 dark:border-slate-500 flex items-center justify-center overflow-hidden relative group-hover:border-blue-500 transition-colors">
+                                {fotoPreview ? (
+                                    <img src={fotoPreview} className="w-full h-full object-cover" />
+                                ) : (
+                                    <span className="text-2xl text-gray-400">📷</span>
+                                )}
+                            </div>
+                            <span className="text-xs text-blue-500 font-bold">Agregar Foto (Opcional)</span>
+                            <input type="file" accept="image/*" onChange={handleFoto} className="hidden" />
+                        </label>
+                    </div>
+
                     <div className="space-y-3 border-b border-gray-100 dark:border-slate-700 pb-4">
                         <h3 className="font-semibold text-gray-800 dark:text-white flex items-center gap-2">🐾 Datos del Paciente</h3>
                         
@@ -270,14 +309,30 @@ export default function AgendarPage() {
 
                         <div className="grid grid-cols-2 gap-2 items-start"> 
                             <div>
-                                <input type="text" placeholder="Raza" value={raza} onChange={(e) => setRaza(e.target.value)} className={`${inputClass} text-sm`} />
-                                <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1 ml-1 leading-tight">Escriba &quot;desconocido&quot; si no la sabe</p>
+                                {/* ETIQUETA DINÁMICA: Raza vs Tipo */}
+                                <label className="text-xs font-bold text-gray-500 dark:text-gray-400 block mb-1">
+                                    {esOtro ? 'Tipo de animal' : 'Raza'}
+                                </label>
+                                <input 
+                                    type="text" 
+                                    placeholder={esOtro ? "Ej. Tortuga" : "Raza"} 
+                                    value={raza} 
+                                    onChange={(e) => setRaza(e.target.value)} 
+                                    className={`${inputClass} text-sm`} 
+                                />
+                                {/* AYUDA DINÁMICA */}
+                                <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1 ml-1 leading-tight">
+                                    {esOtro ? 'Tortuga, Iguana, Perico...' : 'Escriba "desconocido" si no la sabe'}
+                                </p>
                             </div>
-                            <input type="text" placeholder="Edad" value={edad} onChange={(e) => setEdad(e.target.value)} className={`${inputClass} text-sm`} />
+                            
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 dark:text-gray-400 block mb-1">Edad</label>
+                                <input type="text" placeholder="Ej. 2 años" value={edad} onChange={(e) => setEdad(e.target.value)} className={`${inputClass} text-sm`} />
+                            </div>
                         </div>
                     </div>
 
-                    {/* SECCIÓN 2: CONTACTO */}
                     <div className="space-y-3 border-b border-gray-100 dark:border-slate-700 pb-4">
                         <h3 className="font-semibold text-gray-800 dark:text-white">👤 Datos del Dueño</h3>
                         <div className="grid grid-cols-1 gap-3">
@@ -288,7 +343,7 @@ export default function AgendarPage() {
                 </div>
             )}
 
-            {/* --- SECCIÓN 3: FECHA (Común para ambos modos si ya se identificó) --- */}
+            {/* --- SECCIÓN 3: FECHA --- */}
             {(modo === 'nuevo' || pacienteEncontrado) && (
                 <div className="space-y-3 pt-2 animate-in slide-in-from-bottom-2">
                     <h3 className="font-semibold text-gray-800 dark:text-white">📅 Fecha y Hora</h3>
@@ -322,8 +377,9 @@ export default function AgendarPage() {
             )}
 
           </div>
-          <Link href="/" className="mt-8 text-gray-500 dark:text-gray-400 underline mb-8">Volver</Link>
-          <div className="h-32 w-full"></div>
+          <button onClick={() => window.location.href = '/inicio'} className="mt-8 text-gray-500 dark:text-gray-400 underline mb-8">Volver</button>
+          {/* Scroll reducido */}
+          <div className="h-1 w-full"></div>
         </div>
       </div>
     </div>

@@ -6,7 +6,7 @@ import { db, storage } from '../../../lib/firebase';
 import { collection, addDoc, updateDoc, doc, query, orderBy, onSnapshot, deleteDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import CartillaView from '../../../components/pacientes/CartillaView';
-import HistorialView from '../../../components/pacientes/HistorialView'; // O ruta relativa ../../../components/...
+import HistorialView from '../../../components/pacientes/HistorialView';
 
 // ==========================================
 // 1. UTILIDADES Y COMPONENTES INTERNOS
@@ -114,8 +114,11 @@ export default function PacientesPage() {
   const [pacienteActivo, setPacienteActivo] = useState(null); 
   const [guardando, setGuardando] = useState(false); 
   
+  // NUEVO: Estado para alternar vista de archivados
+  const [mostrarArchivados, setMostrarArchivados] = useState(false);
+  
   const [formData, setFormData] = useState({
-    nombre: '', especie: 'perro', raza: '', edad: '', peso: '',
+    nombre: '', especie: 'perro', raza: '', edad: '', 
     dueño: '', telefono: '', notas: '', foto: null 
   });
   
@@ -195,8 +198,12 @@ export default function PacientesPage() {
 
         const payload = { ...formData, foto: urlFinal, updatedAt: new Date() };
 
-        if (pacienteActivo) await updateDoc(doc(db, "pacientes", pacienteActivo.id), payload);
-        else await addDoc(collection(db, "pacientes"), { ...payload, createdAt: new Date() });
+        if (pacienteActivo) {
+            await updateDoc(doc(db, "pacientes", pacienteActivo.id), payload);
+        } else {
+            // NUEVO: Al crear, marcamos como activo explícitamente
+            await addDoc(collection(db, "pacientes"), { ...payload, activo: true, createdAt: new Date() });
+        }
         
         cerrarVista(); 
         resetForm();
@@ -218,7 +225,7 @@ export default function PacientesPage() {
       setPacienteActivo(paciente);
       setFormData({
           nombre: paciente.nombre, especie: paciente.especie, raza: paciente.raza,
-          edad: paciente.edad, peso: paciente.peso, dueño: paciente.dueño,
+          edad: paciente.edad, dueño: paciente.dueño, 
           telefono: paciente.telefono, notas: paciente.notas, foto: paciente.foto 
       });
       setFotoPreview(paciente.foto); 
@@ -232,16 +239,26 @@ export default function PacientesPage() {
   }
 
   const resetForm = () => {
-      setFormData({ nombre: '', especie: 'perro', raza: '', edad: '', peso: '', dueño: '', telefono: '', notas: '', foto: null });
+      setFormData({ nombre: '', especie: 'perro', raza: '', edad: '', dueño: '', telefono: '', notas: '', foto: null });
       setFotoPreview(null); setFotoFile(null); setPacienteActivo(null);
   };
 
   const inputClass = "w-full p-3 border rounded-lg bg-gray-50 dark:bg-slate-700 text-gray-900 dark:text-white border-gray-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-blue-500 transition-all";
 
-  // --- CORRECCIÓN DE DATOS EN VIVO PARA SUBVISTAS ---
-  // Buscamos siempre la versión más nueva del paciente en la lista 'pacientes' (que se actualiza sola via onSnapshot)
-  // Si no hacemos esto, pacienteActivo se queda con los datos viejos y no muestra las vacunas nuevas al guardar.
+  // Datos en vivo para subvistas
   const pacienteVisualizado = pacientes.find(p => p.id === pacienteActivo?.id) || pacienteActivo;
+
+  // FILTRO: Mostrar Activos o Archivados según el estado
+  const pacientesVisibles = pacientes.filter(p => {
+      const matchBusqueda = p.nombre.toLowerCase().includes(busqueda.toLowerCase()) || p.dueño.toLowerCase().includes(busqueda.toLowerCase());
+      const esArchivado = p.activo === false;
+      
+      if (mostrarArchivados) {
+          return matchBusqueda && esArchivado;
+      }
+      // Por defecto mostramos los activos (o los que no tienen el campo activo definido aun)
+      return matchBusqueda && p.activo !== false;
+  });
 
   return (
     <div className="w-full h-full flex flex-col relative bg-gray-50 dark:bg-slate-900 transition-colors">
@@ -252,14 +269,24 @@ export default function PacientesPage() {
             <main className="flex-1 overflow-y-auto p-4">
                 <div className="sticky top-0 z-10 bg-gray-50 dark:bg-slate-900 pb-2 pt-1">
                     <input 
-                        type="text" placeholder="🔍 Buscar paciente..." value={busqueda}
+                        type="text" 
+                        placeholder={mostrarArchivados ? "🔍 Buscar en archivados..." : "🔍 Buscar paciente..."}
+                        value={busqueda}
                         onChange={(e) => setBusqueda(e.target.value)}
-                        className="w-full p-3 rounded-xl bg-white dark:bg-slate-800 border-none shadow-sm text-gray-900 dark:text-white placeholder-gray-400"
+                        className={`w-full p-3 rounded-xl border-none shadow-sm text-gray-900 dark:text-white placeholder-gray-400 transition-colors ${
+                            mostrarArchivados ? 'bg-orange-50 dark:bg-orange-900/20 ring-1 ring-orange-200 dark:ring-orange-800' : 'bg-white dark:bg-slate-800'
+                        }`}
                     />
                 </div>
 
+                {mostrarArchivados && (
+                    <div className="text-center py-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg mb-2">
+                        <p className="text-xs text-orange-600 dark:text-orange-400 font-bold">📂 Viendo Expedientes Archivados</p>
+                    </div>
+                )}
+
                 <div className="space-y-3 mt-2">
-                    {pacientes.filter(p => p.nombre.toLowerCase().includes(busqueda.toLowerCase()) || p.dueño.toLowerCase().includes(busqueda.toLowerCase())).map(p => (
+                    {pacientesVisibles.map(p => (
                         <div key={p.id} onClick={() => verDetalle(p)} className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm flex items-center gap-4 border-l-4 border-purple-500 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors relative">
                             <div className="w-12 h-12 rounded-full bg-purple-50 dark:bg-purple-900/30 flex items-center justify-center text-2xl overflow-hidden border border-gray-100 dark:border-slate-700">
                                 {p.foto ? <img src={p.foto} alt={p.nombre} className="w-full h-full object-cover" /> : <span>{p.especie === 'perro' ? '🐶' : p.especie === 'gato' ? '🐱' : '🐰'}</span>}
@@ -277,11 +304,31 @@ export default function PacientesPage() {
                             </button>
                         </div>
                     ))}
+                    {pacientesVisibles.length === 0 && (
+                        <div className="text-center py-10 opacity-50">
+                            <p className="text-gray-400 text-sm">
+                                {mostrarArchivados ? "No hay pacientes archivados" : "No se encontraron pacientes"}
+                            </p>
+                        </div>
+                    )}
                 </div>
+
+                {/* BOTÓN DISCRETO PARA VER HISTORIAL ARCHIVADO */}
+                <div className="mt-8 text-center pb-4">
+                    <button 
+                        onClick={() => setMostrarArchivados(!mostrarArchivados)}
+                        className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 underline transition-colors p-2"
+                    >
+                        {mostrarArchivados ? "← Volver a lista activa" : "Ver expedientes archivados 📂"}
+                    </button>
+                </div>
+
                 <div className="h-24"></div>
             </main>
 
-            <button onClick={crearNuevo} className="absolute bottom-8 right-6 w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg flex items-center justify-center text-3xl font-bold hover:scale-110 active:scale-95 transition-transform z-50">+</button>
+            {!mostrarArchivados && (
+                <button onClick={crearNuevo} className="absolute bottom-8 right-6 w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg flex items-center justify-center text-3xl font-bold hover:scale-110 active:scale-95 transition-transform z-50">+</button>
+            )}
         </>
       )}
 
@@ -315,7 +362,6 @@ export default function PacientesPage() {
                     <div className="grid grid-cols-3 gap-2">
                          <input name="raza" placeholder="Raza" value={formData.raza} onChange={handleInput} className={`${inputClass} text-sm`} />
                          <input name="edad" placeholder="Edad" value={formData.edad} onChange={handleInput} className={`${inputClass} text-sm`} />
-                         <input name="peso" placeholder="Kg" type="number" value={formData.peso} onChange={handleInput} className={`${inputClass} text-sm`} />
                     </div>
                     <textarea name="notas" placeholder="Alergias, notas médicas..." value={formData.notas} onChange={handleInput} className={`${inputClass} h-20 text-sm`} />
                 </div>
@@ -326,17 +372,62 @@ export default function PacientesPage() {
                     <input name="telefono" type="tel" placeholder="Teléfono" value={formData.telefono} onChange={handleInput} className={inputClass} />
                 </div>
 
+                {/* BOTONES DE GESTIÓN (ARCHIVAR/RESTAURAR/BORRAR) */}
                 {pacienteActivo && (
-                    <button onClick={async () => {
-                            if(confirm("¿Borrar expediente?")) {
-                                try { if (pacienteActivo.foto) await deleteObject(ref(storage, pacienteActivo.foto)); } catch (e) {}
-                                await deleteDoc(doc(db, "pacientes", pacienteActivo.id));
-                                cerrarVista();
-                            }
-                        }} className="w-full text-red-500 dark:text-red-400 text-sm py-4 hover:underline">
-                        Eliminar Expediente Permanentemente
-                    </button>
+                    <div className="mt-8 flex flex-col gap-3">
+                        {pacienteActivo.activo === false ? (
+                            // MODO ARCHIVADO: Restaurar o Borrar Definitivo
+                            <>
+                                <div className="bg-orange-50 dark:bg-orange-900/20 p-3 rounded-lg text-center text-xs text-orange-600 dark:text-orange-400 border border-orange-200 dark:border-orange-800 mb-2">
+                                    Este expediente está archivado desde: <br/> 
+                                    <b>{new Date(pacienteActivo.archivadoEl).toLocaleDateString()}</b>
+                                </div>
+                                
+                                <button 
+                                    onClick={async () => {
+                                        if(confirm("¿Restaurar este expediente a la lista activa?")) {
+                                            await updateDoc(doc(db, "pacientes", pacienteActivo.id), { activo: true, archivadoEl: null });
+                                            cerrarVista();
+                                        }
+                                    }} 
+                                    className="w-full bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 py-3 rounded-lg font-bold border border-green-200 dark:border-green-800 hover:bg-green-100 transition-colors"
+                                >
+                                    ♻️ Restaurar Expediente
+                                </button>
+
+                                <button 
+                                    onClick={async () => {
+                                        if(confirm("⚠ ¿ESTÁS SEGURO? Se borrará permanentemente y NO se podrá recuperar.")) {
+                                            try { if (pacienteActivo.foto) await deleteObject(ref(storage, pacienteActivo.foto)); } catch (e) {}
+                                            await deleteDoc(doc(db, "pacientes", pacienteActivo.id));
+                                            cerrarVista();
+                                        }
+                                    }} 
+                                    className="w-full text-red-500 text-xs py-3 hover:underline"
+                                >
+                                    Eliminar Definitivamente (Irreversible)
+                                </button>
+                            </>
+                        ) : (
+                            // MODO ACTIVO: Archivar
+                            <button 
+                                onClick={async () => {
+                                    if(confirm("¿Archivar este expediente? Desaparecerá de la lista principal pero podrás consultarlo después.")) {
+                                        await updateDoc(doc(db, "pacientes", pacienteActivo.id), { 
+                                            activo: false, 
+                                            archivadoEl: new Date().toISOString() 
+                                        });
+                                        cerrarVista();
+                                    }
+                                }} 
+                                className="w-full text-gray-400 dark:text-gray-500 text-sm py-4 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                            >
+                                📁 Archivar Expediente
+                            </button>
+                        )}
+                    </div>
                 )}
+                
                 <div className="h-20"></div>
             </div>
           </main>
@@ -354,6 +445,9 @@ export default function PacientesPage() {
                 </div>
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{pacienteVisualizado.nombre}</h2>
                 <p className="text-gray-500 dark:text-gray-400">{pacienteVisualizado.raza} • {pacienteVisualizado.edad}</p>
+                {pacienteVisualizado.activo === false && (
+                    <span className="mt-2 bg-orange-100 text-orange-700 text-xs px-3 py-1 rounded-full font-bold">ARCHIVADO</span>
+                )}
              </div>
 
              <div className="grid grid-cols-1 gap-4 max-w-sm mx-auto w-full">
@@ -377,15 +471,6 @@ export default function PacientesPage() {
           </main>
       )}
 
-      {vista === 'historial' && pacienteVisualizado && (
-          <main 
-            className="flex-1 overflow-y-auto bg-gray-50 dark:bg-slate-900 relative flex flex-col"
-            onTouchStart={bloquearSwipe} onTouchMove={bloquearSwipe} onTouchEnd={bloquearSwipe}
-          >
-              <HistorialView paciente={pacienteVisualizado} onBack={cerrarVista} />
-          </main>
-      )}
-
       {/* VISTA 4: CARTILLA */}
       {vista === 'cartilla' && pacienteVisualizado && (
           <main 
@@ -393,6 +478,16 @@ export default function PacientesPage() {
             onTouchStart={bloquearSwipe} onTouchMove={bloquearSwipe} onTouchEnd={bloquearSwipe}
           >
               <CartillaView paciente={pacienteVisualizado} onBack={cerrarVista} />
+          </main>
+      )}
+
+      {/* VISTA 5: HISTORIAL */}
+      {vista === 'historial' && pacienteVisualizado && (
+          <main 
+            className="flex-1 overflow-y-auto bg-gray-50 dark:bg-slate-900 relative flex flex-col"
+            onTouchStart={bloquearSwipe} onTouchMove={bloquearSwipe} onTouchEnd={bloquearSwipe}
+          >
+              <HistorialView paciente={pacienteVisualizado} onBack={cerrarVista} />
           </main>
       )}
     </div>

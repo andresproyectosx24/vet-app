@@ -1,24 +1,108 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-// Usamos ruta relativa para asegurar que encuentre firebase sin problemas
 import { db } from '../../lib/firebase'; 
 import { doc, updateDoc, onSnapshot } from 'firebase/firestore';
+
+// --- COMPONENTE DE GRÁFICA (SVG NATIVO) ---
+const PesoChart = ({ historial }) => {
+  // 1. Preparamos los datos
+  const data = (historial || [])
+    .filter(h => h.peso && !isNaN(parseFloat(h.peso)))
+    .map(h => ({ 
+        val: parseFloat(h.peso), 
+        date: new Date(h.fecha),
+        label: new Date(h.fecha).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' })
+    }))
+    .sort((a, b) => a.date - b.date);
+
+  // Si no hay datos suficientes, mostramos mensaje
+  if (data.length === 0) return (
+      <div className="flex flex-col items-center justify-center h-40 text-gray-400 text-sm">
+          <span>⚖️</span>
+          <p>No hay registros de peso aún.</p>
+      </div>
+  );
+
+  // Configuración del SVG
+  const height = 150; // Un poco más alto para el modal
+  const width = 300; 
+  const paddingX = 20;
+  const paddingY = 20;
+
+  const maxVal = Math.max(...data.map(d => d.val)) * 1.05;
+  const minVal = Math.min(...data.map(d => d.val)) * 0.95;
+  const range = maxVal - minVal || 1;
+
+  const getX = (index) => {
+      if (data.length === 1) return width / 2;
+      return paddingX + (index / (data.length - 1)) * (width - 2 * paddingX);
+  }
+  const getY = (val) => height - paddingY - ((val - minVal) / range) * (height - 2 * paddingY);
+
+  const points = data.map((d, i) => `${getX(i)},${getY(d.val)}`).join(' ');
+
+  return (
+     <div className="w-full relative">
+        <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto overflow-visible">
+           <polyline 
+             fill="none" 
+             stroke="#3b82f6" 
+             strokeWidth="2" 
+             points={points} 
+             strokeLinecap="round" 
+             strokeLinejoin="round"
+             className="drop-shadow-sm"
+           />
+           {data.map((d, i) => (
+               <g key={i}>
+                   <circle 
+                     cx={getX(i)} 
+                     cy={getY(d.val)} 
+                     r="3" 
+                     fill="#3b82f6" 
+                     stroke="white" 
+                     strokeWidth="1.5" 
+                     className="dark:stroke-slate-800"
+                   />
+                   <text 
+                     x={getX(i)} 
+                     y={getY(d.val) - 8} 
+                     textAnchor="middle" 
+                     fontSize="9" 
+                     fontWeight="bold" 
+                     className="fill-gray-700 dark:fill-gray-200"
+                   >
+                       {d.val}
+                   </text>
+                    <text 
+                     x={getX(i)} 
+                     y={height} 
+                     textAnchor="middle" 
+                     fontSize="7" 
+                     className="fill-gray-400"
+                   >
+                       {d.label}
+                   </text>
+               </g>
+           ))}
+        </svg>
+     </div>
+  );
+};
 
 export default function HistorialView({ paciente: pacienteInicial, onBack }) {
   const [pacienteEnVivo, setPacienteEnVivo] = useState(pacienteInicial);
   const [registroEditando, setRegistroEditando] = useState(null); 
   const [guardando, setGuardando] = useState(false);
+  
+  // NUEVO: Estado para mostrar/ocultar la gráfica flotante
+  const [mostrarGrafica, setMostrarGrafica] = useState(false);
 
-  // Formulario temporal para la edición
   const [formEdicion, setFormEdicion] = useState({
-    motivo: '',
-    diagnostico: '',
-    tratamiento: '',
-    notas: ''
+    motivo: '', diagnostico: '', tratamiento: '', notas: ''
   });
 
-  // 1. Escuchar cambios en vivo
   useEffect(() => {
     if (!pacienteInicial?.id) return;
     const docRef = doc(db, "pacientes", pacienteInicial.id);
@@ -30,17 +114,14 @@ export default function HistorialView({ paciente: pacienteInicial, onBack }) {
     return () => unsubscribe();
   }, [pacienteInicial?.id]);
 
-  // CORRECCIÓN AQUÍ: Creamos una copia del array con [...array] antes de ordenar
-  // Esto evita el error de "Cannot assign to read only property"
   const historial = [...(pacienteEnVivo.historial || [])].sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
 
-  // 2. Manejo de Edición
   const abrirEdicion = (registro) => {
     setRegistroEditando(registro);
     setFormEdicion({
         motivo: registro.motivo || '',
         diagnostico: registro.diagnostico || '',
-        tratamiento: typeof registro.tratamiento === 'string' ? registro.tratamiento : 'Ver detalle en medicamentos', // Manejo simple si es objeto
+        tratamiento: typeof registro.tratamiento === 'string' ? registro.tratamiento : 'Ver detalle en medicamentos',
         notas: registro.notas || ''
     });
   };
@@ -58,7 +139,6 @@ export default function HistorialView({ paciente: pacienteInicial, onBack }) {
       setGuardando(true);
       try {
           const nuevoHistorial = [...(pacienteEnVivo.historial || [])];
-          
           const index = nuevoHistorial.findIndex(item => item.fecha === registroEditando.fecha);
           
           if (index !== -1) {
@@ -74,7 +154,6 @@ export default function HistorialView({ paciente: pacienteInicial, onBack }) {
               await updateDoc(doc(db, "pacientes", pacienteEnVivo.id), {
                   historial: nuevoHistorial
               });
-              
               cancelarEdicion();
           }
       } catch (error) {
@@ -91,14 +170,47 @@ export default function HistorialView({ paciente: pacienteInicial, onBack }) {
       {/* HEADER */}
       <div className="flex items-center gap-3 p-4 bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 sticky top-0 z-20 shadow-sm">
         <button onClick={onBack} className="text-2xl text-gray-500 dark:text-gray-400">←</button>
-        <div>
-            <h2 className="font-bold text-lg text-gray-800 dark:text-white">Historial Clínico</h2>
+        <div className="flex-1">
+            <div className="flex items-center gap-2">
+                <h2 className="font-bold text-lg text-gray-800 dark:text-white">Historial Clínico</h2>
+                {/* BOTÓN PARA ABRIR GRÁFICA */}
+                <button 
+                    onClick={() => setMostrarGrafica(true)}
+                    className="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider hover:scale-105 transition-transform"
+                >
+                    ⚖️ Ver Peso
+                </button>
+            </div>
             <p className="text-xs text-gray-500 dark:text-gray-400">Paciente: {pacienteEnVivo.nombre}</p>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 pb-24">
         
+        {/* VENTANA FLOTANTE (MODAL) DE GRÁFICA */}
+        {mostrarGrafica && (
+            <div 
+                className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+                onClick={() => setMostrarGrafica(false)}
+            >
+                <div 
+                    className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-2xl w-full max-w-sm relative"
+                    onClick={(e) => e.stopPropagation()} // Evita cerrar si clickean dentro
+                >
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="font-bold text-lg text-gray-800 dark:text-white">Evolución de Peso</h3>
+                        <button onClick={() => setMostrarGrafica(false)} className="text-gray-400 hover:text-red-500 text-xl">✕</button>
+                    </div>
+                    
+                    <PesoChart historial={pacienteEnVivo.historial} />
+                    
+                    <div className="mt-4 text-center">
+                         <span className="text-xs text-gray-400">Datos basados en consultas finalizadas</span>
+                    </div>
+                </div>
+            </div>
+        )}
+
         {/* MODO EDICIÓN */}
         {registroEditando ? (
             <div className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-lg border border-blue-500 animate-in fade-in zoom-in duration-200 mb-6">
@@ -163,6 +275,12 @@ export default function HistorialView({ paciente: pacienteInicial, onBack }) {
                         </div>
 
                         <div className="space-y-2 text-sm">
+                            {registro.peso && (
+                                <div className="inline-block bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 text-xs font-bold px-2 py-1 rounded-full mb-1">
+                                    ⚖️ {registro.peso} kg
+                                </div>
+                            )}
+
                             {registro.diagnostico && (
                                 <div className="bg-gray-50 dark:bg-slate-700/30 p-2 rounded border-l-2 border-orange-400">
                                     <span className="font-bold text-gray-700 dark:text-gray-300 block text-xs">Diagnóstico:</span>
@@ -182,14 +300,12 @@ export default function HistorialView({ paciente: pacienteInicial, onBack }) {
                                 </div>
                             )}
                             
-                            {/* Mostrar Hallazgos si existen */}
                             {registro.hallazgos && (
                                 <div className="mt-2 text-gray-600 dark:text-gray-400 text-xs">
                                     <span className="font-bold">Hallazgos:</span> {registro.hallazgos}
                                 </div>
                             )}
 
-                            {/* Mostrar Foto de Hallazgos si existe */}
                             {registro.fotoHallazgos && (
                                 <div className="mt-2 w-full h-32 bg-gray-100 dark:bg-slate-700 rounded-lg overflow-hidden relative">
                                     <img src={registro.fotoHallazgos} alt="Hallazgos" className="w-full h-full object-cover" />
