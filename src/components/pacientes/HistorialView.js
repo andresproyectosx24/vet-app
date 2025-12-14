@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { db } from '@/lib/firebase'; // Ajusta si tu alias @ funciona, si no usa ../../lib/firebase
+// Usamos ruta relativa para asegurar que encuentre firebase sin problemas
+import { db } from '../../lib/firebase'; 
 import { doc, updateDoc, onSnapshot } from 'firebase/firestore';
 
 export default function HistorialView({ paciente: pacienteInicial, onBack }) {
   const [pacienteEnVivo, setPacienteEnVivo] = useState(pacienteInicial);
-  const [registroEditando, setRegistroEditando] = useState(null); // Si no es null, muestra el formulario de edición
+  const [registroEditando, setRegistroEditando] = useState(null); 
   const [guardando, setGuardando] = useState(false);
 
   // Formulario temporal para la edición
@@ -17,7 +18,7 @@ export default function HistorialView({ paciente: pacienteInicial, onBack }) {
     notas: ''
   });
 
-  // 1. Escuchar cambios en vivo (Igual que en Cartilla)
+  // 1. Escuchar cambios en vivo
   useEffect(() => {
     if (!pacienteInicial?.id) return;
     const docRef = doc(db, "pacientes", pacienteInicial.id);
@@ -29,8 +30,9 @@ export default function HistorialView({ paciente: pacienteInicial, onBack }) {
     return () => unsubscribe();
   }, [pacienteInicial?.id]);
 
-  // Ordenar historial: Lo más reciente arriba
-  const historial = (pacienteEnVivo.historial || []).sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+  // CORRECCIÓN AQUÍ: Creamos una copia del array con [...array] antes de ordenar
+  // Esto evita el error de "Cannot assign to read only property"
+  const historial = [...(pacienteEnVivo.historial || [])].sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
 
   // 2. Manejo de Edición
   const abrirEdicion = (registro) => {
@@ -38,7 +40,7 @@ export default function HistorialView({ paciente: pacienteInicial, onBack }) {
     setFormEdicion({
         motivo: registro.motivo || '',
         diagnostico: registro.diagnostico || '',
-        tratamiento: registro.tratamiento || '',
+        tratamiento: typeof registro.tratamiento === 'string' ? registro.tratamiento : 'Ver detalle en medicamentos', // Manejo simple si es objeto
         notas: registro.notas || ''
     });
   };
@@ -55,24 +57,20 @@ export default function HistorialView({ paciente: pacienteInicial, onBack }) {
   const guardarCambios = async () => {
       setGuardando(true);
       try {
-          // Copiamos el historial actual
           const nuevoHistorial = [...(pacienteEnVivo.historial || [])];
           
-          // Buscamos el índice del registro que estamos editando
-          const index = nuevoHistorial.findIndex(item => item.fecha === registroEditando.fecha); // Usamos fecha como ID temporal si no hay ID único
+          const index = nuevoHistorial.findIndex(item => item.fecha === registroEditando.fecha);
           
           if (index !== -1) {
-              // Actualizamos solo los campos permitidos
               nuevoHistorial[index] = {
                   ...nuevoHistorial[index],
                   motivo: formEdicion.motivo,
                   diagnostico: formEdicion.diagnostico,
                   tratamiento: formEdicion.tratamiento,
                   notas: formEdicion.notas,
-                  editadoEl: new Date().toISOString() // Marca de auditoría
+                  editadoEl: new Date().toISOString()
               };
 
-              // Guardamos en Firebase (Sobreescribimos el array completo con la modificación)
               await updateDoc(doc(db, "pacientes", pacienteEnVivo.id), {
                   historial: nuevoHistorial
               });
@@ -87,7 +85,6 @@ export default function HistorialView({ paciente: pacienteInicial, onBack }) {
       }
   };
 
-  // --- RENDER ---
   return (
     <div className="flex flex-col h-full bg-gray-50 dark:bg-slate-900 relative">
       
@@ -102,7 +99,7 @@ export default function HistorialView({ paciente: pacienteInicial, onBack }) {
 
       <div className="flex-1 overflow-y-auto p-4 pb-24">
         
-        {/* MODO EDICIÓN (Overlay o Inline) */}
+        {/* MODO EDICIÓN */}
         {registroEditando ? (
             <div className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-lg border border-blue-500 animate-in fade-in zoom-in duration-200 mb-6">
                 <div className="flex justify-between items-center mb-4 border-b dark:border-slate-700 pb-2">
@@ -138,20 +135,16 @@ export default function HistorialView({ paciente: pacienteInicial, onBack }) {
             </div>
         ) : null}
 
-        {/* LISTA CRONOLÓGICA (Solo Lectura con botón editar) */}
+        {/* LISTA CRONOLÓGICA */}
         <div className="space-y-6 relative">
-            {/* Línea de tiempo */}
             <div className="absolute left-4 top-2 bottom-2 w-0.5 bg-gray-200 dark:bg-slate-700 z-0"></div>
 
             {historial.map((registro, index) => (
                 <div key={index} className="relative pl-10 z-10 group">
-                    {/* Punto Cronológico */}
                     <div className="absolute left-[12px] top-5 w-2.5 h-2.5 bg-blue-500 rounded-full border-2 border-white dark:border-slate-900 shadow-sm"></div>
 
-                    {/* Tarjeta de Historial */}
                     <div className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-slate-700/50 hover:border-blue-300 dark:hover:border-blue-700 transition-colors">
                         
-                        {/* Cabecera Tarjeta */}
                         <div className="flex justify-between items-start mb-2">
                             <div>
                                 <p className="text-xs text-blue-500 font-bold uppercase tracking-wider">
@@ -169,7 +162,6 @@ export default function HistorialView({ paciente: pacienteInicial, onBack }) {
                             </button>
                         </div>
 
-                        {/* Contenido Médico */}
                         <div className="space-y-2 text-sm">
                             {registro.diagnostico && (
                                 <div className="bg-gray-50 dark:bg-slate-700/30 p-2 rounded border-l-2 border-orange-400">
@@ -181,7 +173,27 @@ export default function HistorialView({ paciente: pacienteInicial, onBack }) {
                             {registro.tratamiento && (
                                 <div className="bg-gray-50 dark:bg-slate-700/30 p-2 rounded border-l-2 border-green-400">
                                     <span className="font-bold text-gray-700 dark:text-gray-300 block text-xs">Tratamiento:</span>
-                                    <p className="text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{registro.tratamiento}</p>
+                                    <p className="text-gray-600 dark:text-gray-400 whitespace-pre-wrap">
+                                        {typeof registro.tratamiento === 'string' ? registro.tratamiento : 
+                                            Array.isArray(registro.tratamiento) ? 
+                                                registro.tratamiento.map(m => `• ${m.nombre} (${m.dosis} - ${m.frecuencia})`).join('\n') 
+                                            : 'Ver detalles'}
+                                    </p>
+                                </div>
+                            )}
+                            
+                            {/* Mostrar Hallazgos si existen */}
+                            {registro.hallazgos && (
+                                <div className="mt-2 text-gray-600 dark:text-gray-400 text-xs">
+                                    <span className="font-bold">Hallazgos:</span> {registro.hallazgos}
+                                </div>
+                            )}
+
+                            {/* Mostrar Foto de Hallazgos si existe */}
+                            {registro.fotoHallazgos && (
+                                <div className="mt-2 w-full h-32 bg-gray-100 dark:bg-slate-700 rounded-lg overflow-hidden relative">
+                                    <img src={registro.fotoHallazgos} alt="Hallazgos" className="w-full h-full object-cover" />
+                                    <a href={registro.fotoHallazgos} target="_blank" className="absolute bottom-1 right-1 bg-black/50 text-white text-[10px] px-2 py-1 rounded backdrop-blur-md">Ver Foto</a>
                                 </div>
                             )}
 

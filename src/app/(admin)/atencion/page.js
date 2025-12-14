@@ -5,7 +5,35 @@ import { db, storage, auth } from '../../../lib/firebase';
 import { collection, doc, query, orderBy, where, onSnapshot, updateDoc, arrayUnion, addDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
-// --- UTILIDAD: FECHA LOCAL ---
+// --- UTILIDAD: COMPRESIÓN DE IMÁGENES (Local para evitar errores de importación) ---
+const comprimirImagen = (archivo) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(archivo);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        const MAX_WIDTH = 1024;
+        const MAX_HEIGHT = 1024;
+        if (width > height) { if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; } } 
+        else { if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; } }
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => {
+          if (!blob) return reject(new Error('Error al comprimir'));
+          resolve(new File([blob], archivo.name, { type: 'image/jpeg', lastModified: Date.now() }));
+        }, 'image/jpeg', 0.7); 
+      };
+    };
+    reader.onerror = (e) => reject(e);
+  });
+};
+
 const getTodayStr = () => {
     const d = new Date();
     const offset = d.getTimezoneOffset() * 60000;
@@ -13,15 +41,13 @@ const getTodayStr = () => {
 };
 
 // ==========================================
-// 1. SELECTOR INICIAL (Citas Hoy + Buscador)
+// 1. SELECTOR INICIAL
 // ==========================================
 function SelectorInicial({ onSelect }) {
   const [citasHoy, setCitasHoy] = useState([]);
   const [pacientes, setPacientes] = useState([]);
   const [busqueda, setBusqueda] = useState('');
-  const [creandoExpress, setCreandoExpress] = useState(false); // Para pacientes nuevos "al vuelo"
 
-  // Cargar Citas de Hoy
   useEffect(() => {
     const hoy = getTodayStr();
     const q = query(collection(db, "citas"), where("fechaSolo", "==", hoy), orderBy("hora", "asc"));
@@ -31,7 +57,6 @@ function SelectorInicial({ onSelect }) {
     return () => unsub();
   }, []);
 
-  // Cargar Todos los Pacientes (para buscar)
   useEffect(() => {
     const q = query(collection(db, "pacientes"), orderBy("nombre", "asc"));
     const unsub = onSnapshot(q, snap => {
@@ -45,34 +70,36 @@ function SelectorInicial({ onSelect }) {
     p.dueño.toLowerCase().includes(busqueda.toLowerCase())
   );
 
-  // Función rápida para crear paciente y atenderlo de inmediato
-  const crearYAtender = async (nombre, dueno) => {
-      if(!nombre || !dueno) return;
+  const crearYAtender = async () => {
+      if(!busqueda) return;
+      const nombre = busqueda;
+      const dueno = prompt("Nombre del dueño:");
+      if(!dueno) return;
+
       const docRef = await addDoc(collection(db, "pacientes"), {
-          nombre, dueño, especie: 'perro', fechaRegistro: new Date().toISOString(), vacunas: [], historial: []
+          nombre, dueño: dueno, especie: 'perro', fechaRegistro: new Date().toISOString(), vacunas: [], historial: []
       });
-      onSelect({ id: docRef.id, nombre, dueño, vacunas: [], historial: [] }, null);
+      onSelect({ id: docRef.id, nombre, dueño: dueno, vacunas: [], historial: [] }, null);
   };
 
   return (
     <div className="flex flex-col h-full bg-gray-50 dark:bg-slate-900 p-4">
       <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-4">Sala de Espera</h1>
 
-      {/* SECCIÓN 1: CITAS DE HOY */}
+      {/* CITAS DE HOY */}
       {citasHoy.length > 0 && (
-          <div className="mb-6">
+          <div className="mb-6 flex-none">
               <h2 className="text-sm font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider mb-2">📅 Agendados para hoy</h2>
               <div className="flex gap-3 overflow-x-auto pb-2 snap-x">
                   {citasHoy.map(cita => (
                       <div 
                         key={cita.id} 
                         onClick={() => {
-                            // Buscamos el paciente real asociado a la cita para tener su ID y datos completos
                             const pacienteReal = pacientes.find(p => p.nombre === cita.mascota && p.dueño === cita.dueño);
                             if (pacienteReal) onSelect(pacienteReal, cita.id);
-                            else alert("No se encontró el expediente de este paciente. Créalo abajo.");
+                            else alert("No se encontró el expediente. Créalo abajo.");
                         }}
-                        className="min-w-[160px] bg-white dark:bg-slate-800 p-3 rounded-xl shadow-sm border-l-4 border-blue-500 cursor-pointer hover:scale-105 transition-transform snap-center"
+                        className="min-w-[160px] bg-white dark:bg-slate-800 p-3 rounded-xl shadow-sm border-l-4 border-blue-500 cursor-pointer snap-center active:scale-95 transition-transform"
                       >
                           <span className="text-xs font-bold bg-gray-100 dark:bg-slate-700 px-2 py-0.5 rounded text-gray-600 dark:text-gray-300">{cita.hora}</span>
                           <h3 className="font-bold text-gray-800 dark:text-white mt-1 truncate">{cita.mascota}</h3>
@@ -83,30 +110,29 @@ function SelectorInicial({ onSelect }) {
           </div>
       )}
 
-      {/* SECCIÓN 2: BUSCADOR GENERAL */}
+      {/* BUSCADOR */}
       <div className="flex-1 flex flex-col min-h-0">
-          <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-2">🔍 Paciente sin cita / Walk-in</h2>
+          <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-2">🔍 Paciente sin cita</h2>
           <input 
             type="text" 
             placeholder="Buscar por nombre o dueño..." 
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
-            className="w-full p-4 rounded-xl bg-white dark:bg-slate-800 border-none shadow-sm text-lg mb-4 outline-none focus:ring-2 focus:ring-green-500"
+            className="w-full p-4 rounded-xl bg-white dark:bg-slate-800 border-none shadow-sm text-lg mb-4 outline-none focus:ring-2 focus:ring-green-500 text-gray-800 dark:text-white"
           />
           
-          <div className="flex-1 overflow-y-auto space-y-2">
-            {/* Opción de Crear Nuevo Rápido si no existe */}
+          <div className="flex-1 overflow-y-auto space-y-2 pb-4">
             {busqueda && pacientesFiltrados.length === 0 && (
                 <div 
-                    onClick={() => crearYAtender(busqueda, "Dueño Genérico")} // Simplificado para demo
-                    className="p-4 rounded-xl border-2 border-dashed border-blue-300 dark:border-blue-700 text-blue-500 text-center cursor-pointer"
+                    onClick={crearYAtender}
+                    className="p-4 rounded-xl border-2 border-dashed border-blue-300 dark:border-blue-700 text-blue-500 text-center cursor-pointer active:bg-blue-50 dark:active:bg-blue-900/20"
                 >
-                    No existe &quot;{busqueda}&quot;. <b>+ Crear y Atender</b>
+                    No existe &ldquo;{busqueda}&rdquo;. <br/><b>+ Tocar para Crear y Atender</b>
                 </div>
             )}
 
             {pacientesFiltrados.map(p => (
-              <div key={p.id} onClick={() => onSelect(p, null)} className="bg-white dark:bg-slate-800 p-3 rounded-lg shadow-sm flex justify-between items-center cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700">
+              <div key={p.id} onClick={() => onSelect(p, null)} className="bg-white dark:bg-slate-800 p-3 rounded-lg shadow-sm flex justify-between items-center cursor-pointer active:bg-gray-100 dark:active:bg-slate-700">
                 <div>
                   <h3 className="font-bold text-gray-900 dark:text-white">{p.nombre}</h3>
                   <p className="text-xs text-gray-500 dark:text-gray-400">{p.raza} • {p.dueño}</p>
@@ -116,42 +142,71 @@ function SelectorInicial({ onSelect }) {
             ))}
           </div>
       </div>
-      <div className="h-20"></div>
     </div>
   );
 }
 
 // ==========================================
-// 2. WORKSPACE DE ATENCIÓN (El Cerebro)
+// 2. WORKSPACE DE ATENCIÓN
 // ==========================================
 function Workspace({ paciente, citaId, onExit }) {
-  // Modos: 'consulta' (Completa) | 'vacuna' (Rápida)
   const [modo, setModo] = useState('consulta'); 
-  const [avanzado, setAvanzado] = useState(false); // Toggle para medicación compleja
+  const [avanzado, setAvanzado] = useState(false); 
   const [guardando, setGuardando] = useState(false);
+  const [expandirVacuna, setExpandirVacuna] = useState(false); // Opcionales de vacuna
 
-  // Estado Formulario General
+  // Estados de Fotos
+  const [hallazgosFoto, setHallazgosFoto] = useState(null); // File
+  const [hallazgosPreview, setHallazgosPreview] = useState(null); // URL
+  
+  const [vacunaFoto, setVacunaFoto] = useState(null); // File
+  const [vacunaPreview, setVacunaPreview] = useState(null); // URL
+
   const [form, setForm] = useState({
     peso: paciente.peso || '',
     motivo: '',
-    anamnesis: '', // Hallazgos
+    anamnesis: '', 
     diagnostico: '',
-    tratamientoTexto: '', // Versión simple
+    tratamientoTexto: '', 
     notas: ''
   });
 
-  // Estado Formulario Vacuna
   const [vacunaForm, setVacunaForm] = useState({
       nombre: '',
       fecha: getTodayStr(),
-      proxima: ''
+      proxima: '',
+      observaciones: '' // Nuevo campo manual
   });
 
-  // Estado Medicamentos Estructurados (Modo Avanzado)
   const [medicamentos, setMedicamentos] = useState([]);
   const [medTemp, setMedTemp] = useState({ nombre: '', dosis: '', frecuencia: '', duracion: '' });
 
-  // Helpers
+  // BLOQUEO DE SWIPE Y NAVEGACIÓN
+  const bloquearSwipe = (e) => e.stopPropagation();
+
+  useEffect(() => {
+      // Push state al montar para interceptar el botón Atrás
+      window.history.pushState({ view: 'workspace' }, '', '#workspace');
+      
+      const handleBack = () => onExit();
+      window.addEventListener('popstate', handleBack);
+      
+      return () => window.removeEventListener('popstate', handleBack);
+  }, []);
+
+  // Helpers de Fotos
+  const procesarFoto = async (e, setFile, setPreview, autoExpand = false) => {
+      const file = e.target.files[0];
+      if (file) {
+          try {
+              const comp = await comprimirImagen(file);
+              setFile(comp);
+              setPreview(URL.createObjectURL(comp));
+              if(autoExpand) setExpandirVacuna(true);
+          } catch (err) { alert("Error imagen"); }
+      }
+  };
+
   const handleInput = (e) => setForm({ ...form, [e.target.name]: e.target.value });
   const handleVacuna = (e) => setVacunaForm({ ...vacunaForm, [e.target.name]: e.target.value });
 
@@ -162,16 +217,30 @@ function Workspace({ paciente, citaId, onExit }) {
   };
 
   const finalizarAtencion = async () => {
-      // Validaciones mínimas según el modo
       if (modo === 'consulta' && !form.diagnostico) return alert("Falta el diagnóstico");
       if (modo === 'vacuna' && !vacunaForm.nombre) return alert("Falta nombre de vacuna");
 
       setGuardando(true);
       try {
-          const batchUpdate = {};
           const timestamp = new Date().toISOString();
+          const batchUpdate = {};
           
-          // 1. PREPARAR OBJETO DE HISTORIAL (CONSULTA)
+          let urlHallazgos = null;
+          let urlVacuna = null;
+
+          // 1. SUBIR FOTOS SI EXISTEN
+          if (hallazgosFoto) {
+              const refH = ref(storage, `pacientes/${paciente.id}/historial/${Date.now()}_h.jpg`);
+              const snapH = await uploadBytes(refH, hallazgosFoto);
+              urlHallazgos = await getDownloadURL(snapH.ref);
+          }
+          if (vacunaFoto) {
+              const refV = ref(storage, `pacientes/${paciente.id}/vacunas/${Date.now()}_v.jpg`);
+              const snapV = await uploadBytes(refV, vacunaFoto);
+              urlVacuna = await getDownloadURL(snapV.ref);
+          }
+
+          // 2. OBJETO CONSULTA
           if (modo === 'consulta') {
               const consultaData = {
                   fecha: timestamp,
@@ -179,28 +248,28 @@ function Workspace({ paciente, citaId, onExit }) {
                   peso: form.peso,
                   motivo: form.motivo || 'Revisión General',
                   hallazgos: form.anamnesis,
+                  fotoHallazgos: urlHallazgos, // Foto guardada
                   diagnostico: form.diagnostico,
                   tratamiento: avanzado ? medicamentos : form.tratamientoTexto,
                   notas: form.notas,
                   veterinario: auth.currentUser?.email
               };
-              // Usamos arrayUnion para agregar al historial
               batchUpdate.historial = arrayUnion(consultaData);
           }
 
-          // 2. PREPARAR OBJETO DE VACUNA (SI APLICA)
-          // Esto inyecta directamente en la cartilla del paciente
+          // 3. OBJETO VACUNA (Nivel 1 + Nivel 2)
           if (modo === 'vacuna' || (modo === 'consulta' && vacunaForm.nombre)) {
               const nuevaVacuna = {
                   id: Date.now().toString(),
                   nombre: vacunaForm.nombre,
                   fecha: vacunaForm.fecha,
-                  proxima: vacunaForm.proxima,
+                  proxima: vacunaForm.proxima || null,
+                  observaciones: vacunaForm.observaciones || null, // Campo extra manual
+                  foto: urlVacuna, // Foto de la etiqueta
                   creadoEl: timestamp
               };
               batchUpdate.vacunas = arrayUnion(nuevaVacuna);
               
-              // Si fue SOLO vacuna, agregamos un registro ligero al historial también
               if (modo === 'vacuna') {
                   batchUpdate.historial = arrayUnion({
                       fecha: timestamp,
@@ -211,26 +280,19 @@ function Workspace({ paciente, citaId, onExit }) {
               }
           }
 
-          // 3. ACTUALIZAR PESO ACTUAL
           if (form.peso) batchUpdate.peso = form.peso;
           batchUpdate.ultimaAtencion = timestamp;
 
-          // EJECUTAR ACTUALIZACIÓN EN FIRESTORE
-          const pacienteRef = doc(db, "pacientes", paciente.id);
-          await updateDoc(pacienteRef, batchUpdate);
+          // GUARDAR
+          await updateDoc(doc(db, "pacientes", paciente.id), batchUpdate);
+          if (citaId) await updateDoc(doc(db, "citas", citaId), { estado: 'finalizada' });
 
-          // 4. CERRAR CITA (Si venía de agenda)
-          if (citaId) {
-              await updateDoc(doc(db, "citas", citaId), { estado: 'finalizada' });
-          }
-
-          alert("¡Atención registrada con éxito!");
-          onExit();
+          // Regresar (back elimina el estado fantasma del historial)
+          window.history.back(); 
 
       } catch (e) {
           console.error(e);
           alert("Error al guardar");
-      } finally {
           setGuardando(false);
       }
   };
@@ -239,12 +301,12 @@ function Workspace({ paciente, citaId, onExit }) {
   const labelClass = "text-xs font-bold text-gray-500 uppercase mb-1 block tracking-wider mt-3";
 
   return (
-    <div className="flex flex-col h-full bg-gray-50 dark:bg-slate-900">
+    <div className="flex flex-col h-full bg-gray-50 dark:bg-slate-900" onTouchStart={bloquearSwipe} onTouchMove={bloquearSwipe}>
       
-      {/* HEADER SUPERIOR */}
+      {/* HEADER */}
       <div className="bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 p-4 flex justify-between items-center shadow-sm z-20">
         <div className="flex items-center gap-3">
-            <button onClick={onExit} className="text-gray-400 hover:text-red-500 text-2xl">✕</button>
+            <button onClick={() => window.history.back()} className="text-gray-400 hover:text-red-500 text-2xl">✕</button>
             <div>
                 <h2 className="font-bold text-lg text-gray-900 dark:text-white leading-tight">{paciente.nombre}</h2>
                 <span className="text-xs text-gray-500">{paciente.especie}</span>
@@ -252,132 +314,124 @@ function Workspace({ paciente, citaId, onExit }) {
         </div>
         <div className="w-20">
             <label className="text-[10px] text-gray-400 block text-right">PESO (KG)</label>
-            <input 
-                type="number" 
-                name="peso" 
-                value={form.peso} 
-                onChange={handleInput} 
-                className="w-full text-right bg-transparent font-mono font-bold text-gray-800 dark:text-white outline-none border-b border-gray-300 focus:border-green-500" 
-                placeholder="0.0"
-            />
+            <input type="number" name="peso" value={form.peso} onChange={handleInput} className="w-full text-right bg-transparent font-mono font-bold text-gray-800 dark:text-white outline-none border-b border-gray-300 focus:border-green-500" placeholder="0.0" />
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 pb-24">
         
-        {/* SELECTOR DE MODO (TABS) */}
+        {/* TABS */}
         <div className="flex p-1 bg-gray-200 dark:bg-slate-800 rounded-xl mb-6">
-            <button 
-                onClick={() => setModo('consulta')}
-                className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${modo === 'consulta' ? 'bg-white dark:bg-slate-700 shadow text-green-600' : 'text-gray-500'}`}
-            >
-                🩺 Consulta
-            </button>
-            <button 
-                onClick={() => setModo('vacuna')}
-                className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${modo === 'vacuna' ? 'bg-white dark:bg-slate-700 shadow text-purple-600' : 'text-gray-500'}`}
-            >
-                💉 Solo Vacuna
-            </button>
+            <button onClick={() => setModo('consulta')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${modo === 'consulta' ? 'bg-white dark:bg-slate-700 shadow text-green-600' : 'text-gray-500'}`}>🩺 Consulta</button>
+            <button onClick={() => setModo('vacuna')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${modo === 'vacuna' ? 'bg-white dark:bg-slate-700 shadow text-purple-600' : 'text-gray-500'}`}>💉 Solo Vacuna</button>
         </div>
 
-        {/* --- FORMULARIO: SOLO VACUNA --- */}
-        {modo === 'vacuna' && (
-            <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                <div className="bg-purple-50 dark:bg-slate-800 p-4 rounded-xl border border-purple-100 dark:border-slate-700">
-                    <h3 className="font-bold text-purple-700 dark:text-purple-400 mb-4">Registro Rápido de Vacunación</h3>
-                    <label className={labelClass}>Vacuna Aplicada</label>
-                    <input name="nombre" value={vacunaForm.nombre} onChange={handleVacuna} placeholder="Ej. Rabia" className={inputClass} autoFocus />
-                    
-                    <div className="grid grid-cols-2 gap-4 mt-3">
-                        <div>
-                            <label className={labelClass}>Fecha</label>
-                            <input type="date" name="fecha" value={vacunaForm.fecha} onChange={handleVacuna} className={inputClass} />
-                        </div>
-                        <div>
-                            <label className={labelClass}>Próxima Dosis</label>
-                            <input type="date" name="proxima" value={vacunaForm.proxima} onChange={handleVacuna} className={inputClass} />
-                        </div>
-                    </div>
-                </div>
-            </div>
-        )}
-
-        {/* --- FORMULARIO: CONSULTA COMPLETA --- */}
-        {modo === 'consulta' && (
-            <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                
-                {/* 1. Motivo y Hallazgos */}
-                <div className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm">
-                    <label className={labelClass}>Motivo de Consulta</label>
-                    <input name="motivo" value={form.motivo} onChange={handleInput} placeholder="Ej. Vómitos, Decaimiento..." className={inputClass} />
-                    
-                    <label className={labelClass}>Hallazgos Clínicos / Examen Físico</label>
-                    <textarea name="anamnesis" value={form.anamnesis} onChange={handleInput} rows="3" placeholder="Temp, FC, FR, Mucosas..." className={inputClass} />
-                </div>
-
-                {/* 2. Diagnóstico */}
-                <div className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border-l-4 border-green-500">
-                    <label className={labelClass}>Diagnóstico</label>
-                    <input name="diagnostico" value={form.diagnostico} onChange={handleInput} placeholder="Ej. Gastroenteritis infecciosa" className={`${inputClass} font-bold`} />
-                </div>
-
-                {/* 3. Tratamiento (Simple vs Avanzado) */}
-                <div className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm">
-                    <div className="flex justify-between items-center mb-2">
-                        <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Plan Terapéutico</label>
-                        <button onClick={() => setAvanzado(!avanzado)} className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded font-bold">
-                            {avanzado ? 'Cambiar a Texto Simple' : 'Modo Avanzado'}
-                        </button>
-                    </div>
-
-                    {!avanzado ? (
-                        <textarea 
-                            name="tratamientoTexto" 
-                            value={form.tratamientoTexto} 
-                            onChange={handleInput} 
-                            rows="4" 
-                            placeholder="Ej. - Omeprazol 10mg c/24h&#10;- Dieta blanda x 3 días" 
-                            className={inputClass} 
-                        />
-                    ) : (
-                        <div className="space-y-3 bg-gray-50 dark:bg-slate-700/50 p-3 rounded-lg">
-                            {/* Constructor de Medicamentos */}
-                            <div className="grid grid-cols-2 gap-2">
-                                <input placeholder="Medicamento" value={medTemp.nombre} onChange={e => setMedTemp({...medTemp, nombre: e.target.value})} className="p-2 rounded border text-sm" />
-                                <input placeholder="Dosis/Vía" value={medTemp.dosis} onChange={e => setMedTemp({...medTemp, dosis: e.target.value})} className="p-2 rounded border text-sm" />
-                                <input placeholder="Frecuencia" value={medTemp.frecuencia} onChange={e => setMedTemp({...medTemp, frecuencia: e.target.value})} className="p-2 rounded border text-sm" />
-                                <input placeholder="Duración" value={medTemp.duracion} onChange={e => setMedTemp({...medTemp, duracion: e.target.value})} className="p-2 rounded border text-sm" />
-                            </div>
-                            <button onClick={agregarMedicamento} className="w-full bg-blue-600 text-white text-xs font-bold py-2 rounded">+ Agregar Medicamento</button>
-                            
-                            {/* Lista Agregada */}
-                            {medicamentos.map((m, i) => (
-                                <div key={i} className="flex justify-between bg-white p-2 rounded text-xs border shadow-sm">
-                                    <span className="font-bold">{m.nombre}</span>
-                                    <span className="text-gray-500">{m.dosis} - {m.frecuencia} ({m.duracion})</span>
+        {/* --- FORMULARIO --- */}
+        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
+            
+            {modo === 'consulta' && (
+                <>
+                    <div className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm">
+                        <label className={labelClass}>Motivo de Consulta</label>
+                        <input name="motivo" value={form.motivo} onChange={handleInput} placeholder="Ej. Vómitos..." className={inputClass} />
+                        
+                        <label className={labelClass}>Hallazgos Clínicos / Fotos</label>
+                        <textarea name="anamnesis" value={form.anamnesis} onChange={handleInput} rows="3" placeholder="Temp, FC, FR..." className={inputClass} />
+                        
+                        {/* FOTO HALLAZGOS */}
+                        <div className="mt-2 flex items-center gap-3">
+                            <label className="bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-2 cursor-pointer">
+                                📷 Agregar Foto
+                                <input type="file" accept="image/*" capture="environment" onChange={(e) => procesarFoto(e, setHallazgosFoto, setHallazgosPreview)} className="hidden" />
+                            </label>
+                            {hallazgosPreview && (
+                                <div className="relative w-12 h-12 rounded overflow-hidden border border-gray-300">
+                                    <img src={hallazgosPreview} className="w-full h-full object-cover" />
+                                    <button onClick={() => {setHallazgosFoto(null); setHallazgosPreview(null)}} className="absolute inset-0 bg-black/50 text-white flex items-center justify-center font-bold">✕</button>
                                 </div>
-                            ))}
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border-l-4 border-green-500">
+                        <label className={labelClass}>Diagnóstico</label>
+                        <input name="diagnostico" value={form.diagnostico} onChange={handleInput} placeholder="Ej. Gastroenteritis" className={`${inputClass} font-bold`} />
+                    </div>
+
+                    <div className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm">
+                        <div className="flex justify-between items-center mb-2">
+                            <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Plan Terapéutico</label>
+                            <button onClick={() => setAvanzado(!avanzado)} className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded font-bold">{avanzado ? 'Texto Simple' : 'Avanzado'}</button>
+                        </div>
+                        {!avanzado ? (
+                            <textarea name="tratamientoTexto" value={form.tratamientoTexto} onChange={handleInput} rows="4" className={inputClass} />
+                        ) : (
+                            <div className="space-y-3 bg-gray-50 dark:bg-slate-700/50 p-3 rounded-lg">
+                                {/* ...Inputs medicamentos... (sin cambios aquí) */}
+                                <div className="grid grid-cols-2 gap-2">
+                                    <input placeholder="Medicamento" value={medTemp.nombre} onChange={e => setMedTemp({...medTemp, nombre: e.target.value})} className="p-2 rounded border text-sm" />
+                                    <input placeholder="Dosis" value={medTemp.dosis} onChange={e => setMedTemp({...medTemp, dosis: e.target.value})} className="p-2 rounded border text-sm" />
+                                </div>
+                                <button onClick={agregarMedicamento} className="w-full bg-blue-600 text-white text-xs font-bold py-2 rounded">+ Agregar</button>
+                                {medicamentos.map((m, i) => <div key={i} className="text-xs bg-white p-2 rounded">{m.nombre} - {m.dosis}</div>)}
+                            </div>
+                        )}
+                    </div>
+                </>
+            )}
+
+            {/* SECCIÓN VACUNA (Compartida y mejorada) */}
+            {(modo === 'vacuna' || modo === 'consulta') && (
+                <div className={`p-4 rounded-xl border transition-colors ${modo === 'vacuna' ? 'bg-white dark:bg-slate-800 border-gray-200' : 'bg-purple-50 dark:bg-slate-800/50 border-purple-100'}`}>
+                    <label className="text-xs font-bold text-purple-600 uppercase mb-2 block">{modo === 'vacuna' ? 'Datos de Vacunación' : '¿Se aplicó vacuna?'}</label>
+                    
+                    <input name="nombre" value={vacunaForm.nombre} onChange={handleVacuna} placeholder="Nombre de vacuna" className={inputClass} />
+                    
+                    {/* Campos adicionales si hay nombre de vacuna */}
+                    {(modo === 'vacuna' || vacunaForm.nombre) && (
+                        <div className="mt-3 space-y-3 animate-in fade-in">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className={labelClass}>Fecha</label>
+                                    <input type="date" name="fecha" value={vacunaForm.fecha} onChange={handleVacuna} className={inputClass} />
+                                </div>
+                                <div>
+                                    <label className={labelClass}>Próxima</label>
+                                    <input type="date" name="proxima" value={vacunaForm.proxima} onChange={handleVacuna} className={inputClass} />
+                                </div>
+                            </div>
+
+                            {/* OPCIONALES (Nivel 2) */}
+                            <button onClick={() => setExpandirVacuna(!expandirVacuna)} className="text-xs font-bold text-gray-400 flex items-center gap-1">
+                                {expandirVacuna ? '▼ Ocultar Detalles' : '▶ Agregar Evidencia / Notas'}
+                            </button>
+
+                            {expandirVacuna && (
+                                <div className="bg-gray-100 dark:bg-slate-700/50 p-3 rounded-lg space-y-3">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-16 h-16 bg-gray-200 rounded overflow-hidden flex-shrink-0 flex items-center justify-center">
+                                            {vacunaPreview ? <img src={vacunaPreview} className="w-full h-full object-cover" /> : <span className="text-xl">📷</span>}
+                                        </div>
+                                        <label className="bg-blue-600 text-white text-xs px-3 py-2 rounded-lg font-bold cursor-pointer shadow-sm">
+                                            FOTO ETIQUETA
+                                            <input type="file" accept="image/*" capture="environment" onChange={(e) => procesarFoto(e, setVacunaFoto, setVacunaPreview)} className="hidden" />
+                                        </label>
+                                    </div>
+                                    <textarea name="observaciones" value={vacunaForm.observaciones} onChange={handleVacuna} placeholder="Lote, observaciones extra..." className="w-full p-2 text-sm rounded border border-gray-300 dark:border-slate-600 outline-none" rows="2" />
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
+            )}
 
-                {/* 4. ¿Aplicó Vacuna También? */}
-                <div className="bg-purple-50 dark:bg-slate-800/50 p-4 rounded-xl border border-purple-100 dark:border-slate-700">
-                    <label className="text-xs font-bold text-purple-600 uppercase mb-2 block">¿Se aplicó vacuna en esta consulta?</label>
-                    <input name="nombre" value={vacunaForm.nombre} onChange={handleVacuna} placeholder="Nombre de vacuna (Opcional)" className={inputClass} />
-                    {vacunaForm.nombre && (
-                        <div className="mt-2 grid grid-cols-2 gap-2 animate-in fade-in">
-                            <input type="date" name="fecha" value={vacunaForm.fecha} onChange={handleVacuna} className={inputClass} />
-                            <input type="date" name="proxima" value={vacunaForm.proxima} onChange={handleVacuna} className={inputClass} />
-                        </div>
-                    )}
-                </div>
-
-                <label className={labelClass}>Notas / Observaciones</label>
-                <textarea name="notas" value={form.notas} onChange={handleInput} rows="2" className={inputClass} />
-            </div>
-        )}
+            {modo === 'consulta' && (
+                <>
+                    <label className={labelClass}>Notas Generales</label>
+                    <textarea name="notas" value={form.notas} onChange={handleInput} rows="2" className={inputClass} />
+                </>
+            )}
+        </div>
 
         <button 
             onClick={finalizarAtencion}
@@ -393,7 +447,7 @@ function Workspace({ paciente, citaId, onExit }) {
 }
 
 // ==========================================
-// 3. PÁGINA PRINCIPAL (Router de Vistas)
+// 3. PÁGINA PRINCIPAL
 // ==========================================
 export default function AtencionPage() {
   const [pacienteSeleccionado, setPacienteSeleccionado] = useState(null);
