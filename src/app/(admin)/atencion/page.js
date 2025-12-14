@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { db, storage, auth } from '../../../lib/firebase'; 
-import { collection, doc, query, orderBy, where, onSnapshot, updateDoc, arrayUnion, addDoc } from 'firebase/firestore';
+// Quitamos orderBy de los imports porque lo haremos manual
+import { collection, doc, query, where, onSnapshot, updateDoc, arrayUnion, addDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
-// --- UTILIDAD: COMPRESIÓN DE IMÁGENES (Local para evitar errores de importación) ---
+// --- UTILIDAD: COMPRESIÓN DE IMÁGENES ---
 const comprimirImagen = (archivo) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -48,19 +49,33 @@ function SelectorInicial({ onSelect }) {
   const [pacientes, setPacientes] = useState([]);
   const [busqueda, setBusqueda] = useState('');
 
+  // CORRECCIÓN: Quitamos orderBy("hora") de la query para evitar el error de índice compuesto
   useEffect(() => {
     const hoy = getTodayStr();
-    const q = query(collection(db, "citas"), where("fechaSolo", "==", hoy), orderBy("hora", "asc"));
+    const q = query(collection(db, "citas"), where("fechaSolo", "==", hoy));
+    
     const unsub = onSnapshot(q, snap => {
-        setCitasHoy(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => c.estado !== 'finalizada'));
+        let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        
+        // Filtramos y Ordenamos manualmente en Javascript
+        docs = docs
+            .filter(c => c.estado !== 'finalizada')
+            .sort((a, b) => a.hora.localeCompare(b.hora)); // Ordenar por hora (texto)
+            
+        setCitasHoy(docs);
     });
     return () => unsub();
   }, []);
 
+  // Carga de Pacientes (Aquí el orderBy("nombre") suele funcionar bien si el índice simple existe)
   useEffect(() => {
-    const q = query(collection(db, "pacientes"), orderBy("nombre", "asc"));
+    // Si falla también aquí, quitaremos el orderBy y ordenaremos con .sort()
+    const q = query(collection(db, "pacientes")); // Intento sin order by para máxima seguridad
     const unsub = onSnapshot(q, snap => {
-        setPacientes(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        // Orden manual alfabético
+        docs.sort((a, b) => a.nombre.localeCompare(b.nombre));
+        setPacientes(docs);
     });
     return () => unsub();
   }, []);
@@ -127,7 +142,7 @@ function SelectorInicial({ onSelect }) {
                     onClick={crearYAtender}
                     className="p-4 rounded-xl border-2 border-dashed border-blue-300 dark:border-blue-700 text-blue-500 text-center cursor-pointer active:bg-blue-50 dark:active:bg-blue-900/20"
                 >
-                    No existe &ldquo;{busqueda}&rdquo;. <br/><b>+ Tocar para Crear y Atender</b>
+                    No existe &quot;{busqueda}&quot;. <br/><b>+ Tocar para Crear y Atender</b>
                 </div>
             )}
 
@@ -175,7 +190,7 @@ function Workspace({ paciente, citaId, onExit }) {
       nombre: '',
       fecha: getTodayStr(),
       proxima: '',
-      observaciones: '' // Nuevo campo manual
+      observaciones: '' 
   });
 
   const [medicamentos, setMedicamentos] = useState([]);
@@ -367,7 +382,7 @@ function Workspace({ paciente, citaId, onExit }) {
                             <textarea name="tratamientoTexto" value={form.tratamientoTexto} onChange={handleInput} rows="4" className={inputClass} />
                         ) : (
                             <div className="space-y-3 bg-gray-50 dark:bg-slate-700/50 p-3 rounded-lg">
-                                {/* ...Inputs medicamentos... (sin cambios aquí) */}
+                                {/* ...Inputs medicamentos... */}
                                 <div className="grid grid-cols-2 gap-2">
                                     <input placeholder="Medicamento" value={medTemp.nombre} onChange={e => setMedTemp({...medTemp, nombre: e.target.value})} className="p-2 rounded border text-sm" />
                                     <input placeholder="Dosis" value={medTemp.dosis} onChange={e => setMedTemp({...medTemp, dosis: e.target.value})} className="p-2 rounded border text-sm" />
@@ -380,14 +395,13 @@ function Workspace({ paciente, citaId, onExit }) {
                 </>
             )}
 
-            {/* SECCIÓN VACUNA (Compartida y mejorada) */}
+            {/* SECCIÓN VACUNA */}
             {(modo === 'vacuna' || modo === 'consulta') && (
                 <div className={`p-4 rounded-xl border transition-colors ${modo === 'vacuna' ? 'bg-white dark:bg-slate-800 border-gray-200' : 'bg-purple-50 dark:bg-slate-800/50 border-purple-100'}`}>
                     <label className="text-xs font-bold text-purple-600 uppercase mb-2 block">{modo === 'vacuna' ? 'Datos de Vacunación' : '¿Se aplicó vacuna?'}</label>
                     
                     <input name="nombre" value={vacunaForm.nombre} onChange={handleVacuna} placeholder="Nombre de vacuna" className={inputClass} />
                     
-                    {/* Campos adicionales si hay nombre de vacuna */}
                     {(modo === 'vacuna' || vacunaForm.nombre) && (
                         <div className="mt-3 space-y-3 animate-in fade-in">
                             <div className="grid grid-cols-2 gap-4">
@@ -401,7 +415,6 @@ function Workspace({ paciente, citaId, onExit }) {
                                 </div>
                             </div>
 
-                            {/* OPCIONALES (Nivel 2) */}
                             <button onClick={() => setExpandirVacuna(!expandirVacuna)} className="text-xs font-bold text-gray-400 flex items-center gap-1">
                                 {expandirVacuna ? '▼ Ocultar Detalles' : '▶ Agregar Evidencia / Notas'}
                             </button>
@@ -447,7 +460,7 @@ function Workspace({ paciente, citaId, onExit }) {
 }
 
 // ==========================================
-// 3. PÁGINA PRINCIPAL
+// 3. PÁGINA PRINCIPAL (Router de Vistas)
 // ==========================================
 export default function AtencionPage() {
   const [pacienteSeleccionado, setPacienteSeleccionado] = useState(null);
