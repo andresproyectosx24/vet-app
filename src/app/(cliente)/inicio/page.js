@@ -4,6 +4,9 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { db } from '../../../lib/firebase'; 
 import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
+// Importamos el visualizador que creamos previamente
+import CartillaClienteView from '../../../components/cliente/CartillaClienteView';
+import HistorialClienteView from '../../../components/cliente/HistorialClienteView';
 
 export default function ClientHome() {
   // --- ESTADOS DE FLUJO ---
@@ -12,10 +15,12 @@ export default function ClientHome() {
   const [buscando, setBuscando] = useState(false);
   const [misMascotas, setMisMascotas] = useState([]);
   
-  // Estados para Modales
-  const [mascotaSeleccionada, setMascotaSeleccionada] = useState(null); // Para menú de opciones
-  const [mascotaEditando, setMascotaEditando] = useState(null); // Para formulario de edición
+  // Estados para Modales y Visualizadores
+  const [mascotaSeleccionada, setMascotaSeleccionada] = useState(null); 
+  const [mascotaEditando, setMascotaEditando] = useState(null); 
   const [guardando, setGuardando] = useState(false);
+  const [viendoCartilla, setViendoCartilla] = useState(false); // Nuevo estado para el visualizador
+  const [viendoHistorial, setViendoHistorial] = useState(false);
 
   // --- LÓGICA DE BÚSQUEDA ---
   const buscarMascotas = async () => {
@@ -57,7 +62,7 @@ export default function ClientHome() {
       
       // Actualizar lista local
       setMisMascotas(prev => prev.map(m => m.id === mascotaEditando.id ? mascotaEditando : m));
-      setMascotaEditando(null); // Cerrar modal
+      setMascotaEditando(null); 
     } catch (error) {
       alert("Error al actualizar");
     } finally {
@@ -65,10 +70,39 @@ export default function ClientHome() {
     }
   };
 
+  // Helper para abrir cartilla
+  const abrirCartilla = () => {
+    // Mantenemos mascotaSeleccionada pero cerramos el menú "modal" visualmente al montar la vista completa
+    setViendoCartilla(true);
+  };
+
+  const abrirHistorial = () => {
+    setViendoHistorial(true);
+  };
+
+  // Si estamos viendo la cartilla, renderizamos SOLO el visualizador (cubre toda la pantalla)
+  if (viendoCartilla && mascotaSeleccionada) {
+      return (
+        <CartillaClienteView 
+            mascota={mascotaSeleccionada} 
+            onBack={() => setViendoCartilla(false)} 
+        />
+      );
+  }
+
+  if (viendoHistorial && mascotaSeleccionada) {
+      return (
+        <HistorialClienteView
+            mascota={mascotaSeleccionada}
+            onBack={() => setViendoHistorial(false)}
+        />
+      );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-900 flex flex-col overflow-hidden relative">
        
-       {/* 1. HEADER CÁLIDO (Fondo) */}
+       {/* 1. HEADER CÁLIDO */}
        <div className="relative bg-gradient-to-br from-blue-600 to-purple-600 pb-24 pt-12 px-6 rounded-b-[3rem] shadow-lg animate-slide-up-fade">
           <header className="relative z-10">
              <h1 className="text-3xl font-extrabold text-white mb-1">
@@ -102,7 +136,7 @@ export default function ClientHome() {
 
            <div className="grid grid-cols-2 gap-4 animate-slide-up-fade" style={{ animationDelay: '200ms' }}>
               
-              {/* BOTÓN MIS MASCOTAS (Activado) */}
+              {/* BOTÓN MIS MASCOTAS */}
               <button 
                   onClick={() => setVista('busqueda')}
                   className="bg-white dark:bg-slate-800 p-5 rounded-3xl shadow-md border border-gray-100 dark:border-slate-700 flex flex-col items-center justify-center text-center gap-3 hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors group active:scale-95"
@@ -112,7 +146,10 @@ export default function ClientHome() {
                   </div>
                   <div>
                     <h3 className="font-bold text-gray-800 dark:text-white text-sm">Mis Mascotas</h3>
-                    <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1 leading-tight">Expediente, cartilla y más</p>
+                    {/* TEXTO ACTUALIZADO */}
+                    <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1 leading-tight">
+                        Visualizar expediente, cartilla, etc.
+                    </p>
                   </div>
               </button>
               
@@ -185,12 +222,17 @@ export default function ClientHome() {
                <div className="flex-1 overflow-y-auto p-4 space-y-4">
                    {misMascotas.map(p => (
                        <div key={p.id} className="bg-white dark:bg-slate-800 p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-700 flex items-center gap-4 relative">
-                           {/* Avatar */}
+                           {/* Avatar: Clic abre menú */}
                            <div 
                               onClick={() => setMascotaSeleccionada(p)}
                               className="w-16 h-16 rounded-full bg-gray-100 dark:bg-slate-700 overflow-hidden flex-shrink-0 flex items-center justify-center border-2 border-white dark:border-slate-600 shadow-sm cursor-pointer"
                            >
-                               {p.foto ? <img src={p.foto} className="w-full h-full object-cover" /> : <span className="text-2xl">{p.especie === 'gato' ? '🐱' : '🐶'}</span>}
+                               {p.foto ? (
+                                   // eslint-disable-next-line @next/next/no-img-element
+                                   <img src={p.foto} alt="foto" className="w-full h-full object-cover" />
+                               ) : (
+                                   <span className="text-2xl">{p.especie === 'gato' ? '🐱' : '🐶'}</span>
+                               )}
                            </div>
 
                            {/* Info - Clic abre menú */}
@@ -220,20 +262,23 @@ export default function ClientHome() {
                <div className="bg-white dark:bg-slate-900 w-full sm:w-96 rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl animate-in slide-in-from-bottom-10 duration-300" onClick={e => e.stopPropagation()}>
                    <div className="text-center mb-6">
                        <div className="w-20 h-20 bg-gray-100 dark:bg-slate-800 rounded-full mx-auto mb-3 overflow-hidden border-4 border-white dark:border-slate-700 shadow-md flex items-center justify-center">
-                           {mascotaSeleccionada.foto ? <img src={mascotaSeleccionada.foto} className="w-full h-full object-cover" /> : <span className="text-4xl">🐾</span>}
+                           {mascotaSeleccionada.foto ? (
+                               // eslint-disable-next-line @next/next/no-img-element
+                               <img src={mascotaSeleccionada.foto} alt="foto" className="w-full h-full object-cover" />
+                           ) : <span className="text-4xl">🐾</span>}
                        </div>
                        <h2 className="text-xl font-bold text-gray-800 dark:text-white">{mascotaSeleccionada.nombre}</h2>
                        <p className="text-sm text-gray-500">¿Qué deseas consultar?</p>
                    </div>
 
                    <div className="grid grid-cols-2 gap-3">
-                       <button onClick={() => alert("Próximamente: Visualizador de Cartilla")} className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-xl border border-purple-100 dark:border-purple-800 hover:bg-purple-100 transition-colors">
-                           <div className="text-2xl mb-1">💉</div>
-                           <div className="text-sm font-bold text-purple-700 dark:text-purple-300">Ver Cartilla</div>
+                       <button onClick={abrirCartilla} className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-xl border border-purple-100 dark:border-purple-800 hover:bg-purple-100 transition-colors group">
+                           <div className="text-2xl mb-1 group-active:scale-90 transition-transform">💉</div>
+                       <div className="text-sm font-bold text-purple-700 dark:text-purple-300">Ver Cartilla</div>
                        </button>
-                       <button onClick={() => alert("Próximamente: Visualizador de Expediente")} className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800 hover:bg-blue-100 transition-colors">
-                           <div className="text-2xl mb-1">📋</div>
-                           <div className="text-sm font-bold text-blue-700 dark:text-blue-300">Ver Expediente</div>
+                       <button onClick={abrirHistorial} className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800 hover:bg-blue-100 transition-colors group">
+                           <div className="text-2xl mb-1 group-active:scale-90 transition-transform">📋</div>
+                           <div className="text-sm font-bold text-blue-700 dark:text-blue-300">Ver Historial</div>
                        </button>
                    </div>
 
