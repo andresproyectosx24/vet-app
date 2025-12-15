@@ -138,12 +138,6 @@ export default function ClientHome() {
        </div>
 
        {/* Animaciones CSS locales para entrada y salida */}
-       <style jsx>{`
-          @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
-          @keyframes slideDown { from { transform: translateY(0); } to { transform: translateY(100%); } }
-          .animate-slide-in { animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-          .animate-slide-out { animation: slideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-       `}</style>
    
        {/* 2. HEADER */}
        <div className="relative z-10 bg-gradient-to-br from-blue-600/95 to-purple-600/95 backdrop-blur-md pb-24 pt-12 px-6 rounded-b-[3rem] shadow-xl animate-slide-up-fade">

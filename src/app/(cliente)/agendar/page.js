@@ -191,12 +191,13 @@ export default function AgendarPage() {
 
       setEstado('exito');
       // Reset
-      setNombreMascota(''); setEspecie('perro'); setRaza(''); setEdad(''); setPeso('');
+      setNombreMascota(''); setEspecie('perro'); setRaza(''); setEdad('');
       setNombreDueno(''); setTelefono('');
       setFecha(''); setHoraSeleccionada('');
       setFotoFile(null); setFotoPreview(null);
       setPacienteEncontrado(null);
       alert("¡Cita agendada correctamente!");
+      router.replace('/inicio');
       
     } catch (error) {
       console.error(error);

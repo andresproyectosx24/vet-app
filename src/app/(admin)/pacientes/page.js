@@ -267,7 +267,7 @@ export default function PacientesPage() {
       {vista === 'lista' && (
         <>
             <main className="flex-1 overflow-y-auto p-4">
-                <div className="sticky top-0 z-10 bg-gray-50 dark:bg-slate-900 pb-2 pt-1">
+                <div className="top-0 z-10 bg-gray-50 dark:bg-slate-900 pb-2 pt-1">
                     <input 
                         type="text" 
                         placeholder={mostrarArchivados ? "🔍 Buscar en archivados..." : "🔍 Buscar paciente..."}

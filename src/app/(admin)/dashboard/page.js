@@ -28,11 +28,13 @@ export default function DashboardVeterinario() {
   const [citaActiva, setCitaActiva] = useState(null);
   const [guardando, setGuardando] = useState(false);
   
-  const [modoPaciente, setModoPaciente] = useState('existente'); 
+  // Estado para alternar entre buscar existente o crear nuevo en el formulario
+  const [modoPaciente, setModoPaciente] = useState('existente'); // 'existente' | 'nuevo'
+
   const [sugerencias, setSugerencias] = useState([]);
   const [mostrarSugerencias, setMostrarSugerencias] = useState(false);
 
-  // NUEVO: Estado para bloquear horas ocupadas en el formulario
+  // Estado para bloquear horas ocupadas en el formulario
   const [horasOcupadas, setHorasOcupadas] = useState([]);
 
   const [formData, setFormData] = useState({
@@ -41,7 +43,7 @@ export default function DashboardVeterinario() {
     pacienteId: null 
   });
 
-  // 1. CARGA DE DATOS GENERALES
+  // 1. CARGA DE DATOS
   useEffect(() => {
     const qCitas = query(collection(db, "citas"), orderBy("fecha", "asc"));
     const unsubCitas = onSnapshot(qCitas, (snapshot) => {
@@ -68,32 +70,26 @@ export default function DashboardVeterinario() {
     };
   }, []);
 
-  // 2. DETECCIÓN DE HORAS OCUPADAS (Lógica Nueva)
+  // 2. DETECCIÓN DE HORAS OCUPADAS
   useEffect(() => {
     if (!formData.fecha) {
         setHorasOcupadas([]);
         return;
     }
-    
-    // Consultamos citas para la fecha seleccionada en el formulario
     const q = query(collection(db, "citas"), where("fechaSolo", "==", formData.fecha));
-    
     const unsubscribe = onSnapshot(q, (snapshot) => {
         const ocupadas = [];
         snapshot.docs.forEach(doc => {
             const data = doc.data();
-            // Si estamos editando, NO bloqueamos la hora que ya tiene esta misma cita
             if (citaActiva && doc.id === citaActiva.id) return;
-            // Agregamos horas de otras citas a la lista de ocupadas
             if (data.hora) ocupadas.push(data.hora);
         });
         setHorasOcupadas(ocupadas);
     });
-
     return () => unsubscribe();
   }, [formData.fecha, citaActiva]);
 
-  // 2. NAVEGACIÓN NATIVA
+  // 3. NAVEGACIÓN NATIVA
   useEffect(() => {
     const handleBack = () => {
         setVista('lista');
@@ -246,7 +242,6 @@ export default function DashboardVeterinario() {
   const guardarCita = async () => {
       if (!formData.mascota || !formData.dueño || !formData.fecha || !formData.hora) return alert("Faltan datos");
       
-      // Validación extra: No permitir guardar si la hora está ocupada
       if (horasOcupadas.includes(formData.hora)) {
           return alert("Ese horario ya está ocupado. Por favor elige otro.");
       }
@@ -342,6 +337,7 @@ export default function DashboardVeterinario() {
                         </span>
                     </h3>
                 </div>
+                
                 <button onClick={(e) => eliminarCita(cita.id, e)} className="text-gray-300 hover:text-red-400 p-1 text-sm">🗑</button>
             </div>
 
@@ -363,9 +359,11 @@ export default function DashboardVeterinario() {
       {/* VISTA 1: LISTA (Día / Semana / Mes) */}
       {vista === 'lista' && (
         <>
-            <main className="flex-1 overflow-y-auto p-4 relative">
+            <main className="flex-1 overflow-y-auto relative">
                 
-                <div className="sticky top-0 z-10 bg-gray-50/95 dark:bg-slate-900/95 backdrop-blur-sm pb-4">
+                {/* HEADER DE CONTROLES (Ahora estático, se va con el scroll) */}
+                <div className="bg-gray-50 dark:bg-slate-900 pb-4 pt-4 px-4 border-b border-gray-100 dark:border-slate-800">
+                    {/* Switcher de Vistas */}
                     <div className="flex bg-gray-200 dark:bg-slate-800 p-1 rounded-lg mb-4">
                         {['dia', 'semana', 'mes'].map((m) => (
                             <button 
@@ -378,16 +376,32 @@ export default function DashboardVeterinario() {
                         ))}
                     </div>
 
-                    <div className="flex items-center justify-between bg-white dark:bg-slate-800 p-3 rounded-xl shadow-sm border border-gray-100 dark:border-slate-700">
-                        <button onClick={() => cambiarFecha(-1)} className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-full">←</button>
-                        <div className="text-center">
-                            <h2 className="text-sm font-bold text-gray-800 dark:text-white">{getTituloFecha()}</h2>
+                    {/* Navegación de Fecha con Botones Mejorados */}
+                    <div className="flex items-center justify-between bg-white dark:bg-slate-800 p-2 rounded-xl shadow-sm border border-gray-100 dark:border-slate-700">
+                        <button 
+                            onClick={() => cambiarFecha(-1)} 
+                            className="w-12 h-12 flex items-center justify-center bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-200 rounded-xl shadow-sm hover:bg-blue-100 dark:hover:bg-blue-900 hover:text-blue-600 transition-all active:scale-95"
+                        >
+                            <span className="text-xl font-bold">‹</span>
+                        </button>
+                        
+                        <div className="text-center px-4">
+                            <h2 className="text-sm font-bold text-gray-800 dark:text-white leading-tight">
+                                {getTituloFecha()}
+                            </h2>
                         </div>
-                        <button onClick={() => cambiarFecha(1)} className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-full">→</button>
+
+                        <button 
+                            onClick={() => cambiarFecha(1)} 
+                            className="w-12 h-12 flex items-center justify-center bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-200 rounded-xl shadow-sm hover:bg-blue-100 dark:hover:bg-blue-900 hover:text-blue-600 transition-all active:scale-95"
+                        >
+                            <span className="text-xl font-bold">›</span>
+                        </button>
                     </div>
                 </div>
 
-                <div className="space-y-4">
+                <div className="p-4 space-y-4">
+                    {/* --- VISTA DIARIA --- */}
                     {modoVista === 'dia' && (
                         <div>
                             {(() => {
@@ -400,17 +414,18 @@ export default function DashboardVeterinario() {
                         </div>
                     )}
 
+                    {/* --- VISTA SEMANAL --- */}
                     {modoVista === 'semana' && (
                         <div className="space-y-6">
                             {getDiasSemana().map((dia) => {
                                 const citasDia = getCitasDelDia(dia);
                                 const esHoyDia = esHoy(dia);
                                 return (
-                                    <div key={dia.toISOString()} className={`rounded-xl ${esHoyDia ? 'bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900' : ''}`}>
-                                        <h3 className={`text-sm font-bold mb-3 px-2 flex justify-between ${esHoyDia ? 'text-blue-600' : 'text-gray-500 dark:text-gray-400'}`}>
+                                   <div key={dia.toISOString()}className={`rounded-xl ${esHoyDia? 'bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900 p-4 -mx-2': ''}`}>
+                                            <h3 className={`text-sm font-bold mb-3 px-2 flex justify-between ${esHoyDia ? 'text-blue-600' : 'text-gray-500 dark:text-gray-400'}`}>
                                             <span>{dia.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric' }).toUpperCase()}</span>
-                                            {esHoyDia && <span className="text-xs bg-blue-100 text-blue-600 px-2 rounded-full">HOY</span>}
-                                        </h3>
+                                            {esHoyDia && (<span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full flex items-center justify-center leading-none">HOY</span>)}
+             </h3>
                                         {citasDia.length > 0 ? citasDia.map(renderCitaCard) : <p className="text-xs text-gray-300 dark:text-gray-700 px-4 mb-4 italic">Sin citas</p>}
                                     </div>
                                 );
@@ -418,7 +433,7 @@ export default function DashboardVeterinario() {
                         </div>
                     )}
 
-                    {/* VISTA MENSUAL */}
+                    {/* --- VISTA MENSUAL --- */}
                     {modoVista === 'mes' && (
                         <div className="grid grid-cols-7 gap-1 bg-gray-200 dark:bg-slate-800 p-1 rounded-xl">
                             {['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((d, i) => (
@@ -531,6 +546,7 @@ export default function DashboardVeterinario() {
                 <div className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm space-y-3 relative">
                     <h3 className="font-bold text-gray-700 dark:text-gray-200 border-b dark:border-slate-700 pb-2 flex justify-between items-center">
                         <span>🐾 Paciente</span>
+                        {/* Píldoras centradas */}
                         {formData.pacienteId && (
                             <span className="text-[10px] font-bold bg-green-100 text-green-700 px-3 py-1 rounded-full flex items-center justify-center leading-none h-6">
                                 Vinculado
