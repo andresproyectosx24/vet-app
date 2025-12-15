@@ -30,7 +30,7 @@
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-main {
+main, .animate-page {
   animation: fadeInUp 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
   will-change: transform, opacity;
 }
@@ -44,19 +44,33 @@ button:active {
 ::-webkit-scrollbar { display: none; width: 0px; background: transparent; }
 * { scrollbar-width: none; -ms-overflow-style: none; }
 
-/* NUEVA ANIMACIÓN PARA EL CLIENTE (Reemplazo de styled-jsx) */
-@keyframes slideUpFade {
-  from {
-    opacity: 0;
-    transform: translateY(30px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
 
+/* --- NUEVAS ANIMACIONES PARA EL CLIENTE --- */
+
+/* 1. Entrada Escalonada (Menu Principal) */
+@keyframes slideUpFade {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 .animate-slide-up-fade {
   animation: slideUpFade 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  opacity: 0; /* Inicia invisible para evitar parpadeos */
+  opacity: 0; /* Inicia invisible */
+}
+
+/* 2. Entrada Lateral (Para listas/subpáginas) */
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+.animate-slide-in-right {
+  animation: slideInRight 0.3s ease-out forwards;
+}
+
+/* 3. Entrada Pop Up (Para modales) */
+@keyframes popUp {
+  from { opacity: 0; transform: scale(0.95) translateY(20px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.animate-pop-up {
+  animation: popUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }

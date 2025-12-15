@@ -6,6 +6,7 @@ import { collection, addDoc, query, where, onSnapshot, getDocs } from 'firebase/
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 // Importamos la utilidad de compresión que ya creaste
 import { comprimirImagen } from '../../../utils/compressor'; 
+import { useRouter } from 'next/navigation' //para el botón atrás
 
 const HORARIOS_DISPONIBLES = [
   "09:00", "10:00", "11:00", "12:00", 
@@ -208,6 +209,7 @@ export default function AgendarPage() {
 
   // Lógica para etiquetas dinámicas
   const esOtro = especie === 'otro';
+  const router = useRouter()
 
   return (
     <div className="h-[100dvh] flex flex-col overflow-hidden">
@@ -377,8 +379,7 @@ export default function AgendarPage() {
             )}
 
           </div>
-          <button onClick={() => window.location.href = '/inicio'} className="mt-8 text-gray-500 dark:text-gray-400 underline mb-8">Volver</button>
-          {/* Scroll reducido */}
+          <button onClick={() => router.push('/inicio')} className="mt-8 text-gray-500 dark:text-gray-400 underline mb-8">Volver</button>          {/* Scroll reducido */}
           <div className="h-1 w-full"></div>
         </div>
       </div>

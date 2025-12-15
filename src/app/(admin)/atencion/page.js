@@ -40,6 +40,9 @@ const getTodayStr = () => {
     return new Date(d.getTime() - offset).toISOString().split('T')[0];
 };
 
+// Helper para bloquear gestos del layout padre
+const bloquearSwipe = (e) => e.stopPropagation();
+
 // ==========================================
 // 1. SELECTOR INICIAL
 // ==========================================
@@ -104,19 +107,24 @@ function SelectorInicial({ onSelect }) {
       {citasHoy.length > 0 && (
           <div className="mb-6 flex-none">
               <h2 className="text-sm font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider mb-2">📅 Agendados para hoy</h2>
-              <div className="flex gap-3 overflow-x-auto pb-2 snap-x">
+              
+              {/* AQUÍ ESTÁ EL CAMBIO: Bloqueamos swipe en este contenedor */}
+              <div 
+                className="flex gap-3 overflow-x-auto pb-2 snap-x"
+                onTouchStart={bloquearSwipe}
+                onTouchMove={bloquearSwipe}
+                onTouchEnd={bloquearSwipe}
+              >
                   {citasHoy.map(cita => (
                       <div 
                         key={cita.id} 
                         onClick={() => {
-                            // Búsqueda inteligente: ignora mayúsculas y espacios extra
                             const pacienteReal = pacientes.find(p => 
                                 cleanStr(p.nombre) === cleanStr(cita.mascota) && 
                                 cleanStr(p.dueño) === cleanStr(cita.dueño)
                             );
                             
                             if (pacienteReal) {
-                                // Seguridad extra: Si el paciente de la cita está archivado, avisar.
                                 if (pacienteReal.activo === false) {
                                     alert("Este paciente está archivado. Restauralo en la sección de Pacientes para atenderlo.");
                                 } else {
@@ -124,7 +132,7 @@ function SelectorInicial({ onSelect }) {
                                 }
                             } else {
                                 alert("No encontré el expediente exacto. Búscalo manualmente abajo.");
-                                setBusqueda(cita.mascota); // Auto-llenar el buscador para ayudar
+                                setBusqueda(cita.mascota);
                             }
                         }}
                         className="min-w-[160px] bg-white dark:bg-slate-800 p-3 rounded-xl shadow-sm border-l-4 border-blue-500 cursor-pointer snap-center active:scale-95 transition-transform"
@@ -155,12 +163,11 @@ function SelectorInicial({ onSelect }) {
                     onClick={crearYAtender}
                     className="p-4 rounded-xl border-2 border-dashed border-blue-300 dark:border-blue-700 text-blue-500 text-center cursor-pointer active:bg-blue-50 dark:active:bg-blue-900/20"
                 >
-                    No existe &ldquo;{busqueda}&rdquo;. <br/><b>+ Tocar para Crear y Atender</b>
+                    No existe &ldquo;{busqueda}&rdquo;.<br/><b>+ Tocar para Crear y Atender</b>
                 </div>
             )}
 
             {pacientesFiltrados.map(p => {
-              // INTELIGENCIA: Verificar si este paciente tiene cita hoy, aunque lo busquemos manualmente
               const citaDeHoy = citasHoy.find(c => 
                   cleanStr(c.mascota) === cleanStr(p.nombre) && 
                   cleanStr(c.dueño) === cleanStr(p.dueño)
@@ -223,7 +230,7 @@ function Workspace({ paciente, citaId, onExit }) {
   const [medicamentos, setMedicamentos] = useState([]);
   const [medTemp, setMedTemp] = useState({ nombre: '', dosis: '', frecuencia: '', duracion: '' });
 
-  // Helper para bloquear swipe
+  // Helper para bloquear swipe (Ya definido arriba, pero lo pasamos aquí también por claridad si se separara)
   const bloquearSwipe = (e) => e.stopPropagation();
 
   useEffect(() => {
