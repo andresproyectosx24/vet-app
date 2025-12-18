@@ -40,7 +40,7 @@ export default function DashboardVeterinario() {
   const [formData, setFormData] = useState({
     dueño: '', telefono: '', mascota: '', especie: 'perro',
     raza: '', edad: '', fecha: '', hora: '', motivo: '',
-    pacienteId: null 
+    pacienteId: null, clienteId: null // AÑADIDO: clienteId para mantener la unificación
   });
 
   // 1. CARGA DE DATOS
@@ -186,12 +186,13 @@ export default function DashboardVeterinario() {
           setFormData({
               dueño: cita.dueño || '', telefono: cita.telefono || '', mascota: cita.mascota || '', especie: cita.especie || 'perro',
               raza: cita.raza || '', edad: cita.edad || '', fecha: fechaStr, hora: cita.hora || '', motivo: cita.motivo || '',
-              pacienteId: cita.pacienteId || null 
+              pacienteId: cita.pacienteId || null,
+              clienteId: cita.clienteId || null
           });
       } else {
           setCitaActiva(null);
           setModoPaciente('existente'); 
-          setFormData({ dueño: '', telefono: '', mascota: '', especie: 'perro', raza: '', edad: '', fecha: getLocalDateStr(fechaActual), hora: '', motivo: '', pacienteId: null });
+          setFormData({ dueño: '', telefono: '', mascota: '', especie: 'perro', raza: '', edad: '', fecha: getLocalDateStr(fechaActual), hora: '', motivo: '', pacienteId: null, clienteId: null });
       }
       setVista('formulario');
   };
@@ -233,12 +234,14 @@ export default function DashboardVeterinario() {
           especie: paciente.especie,
           raza: paciente.raza,
           edad: paciente.edad,
-          pacienteId: paciente.id 
+          pacienteId: paciente.id,
+          clienteId: paciente.clienteId || null // IMPORTANTE: Captura el clienteId si existe
       });
       setSugerencias([]);
       setMostrarSugerencias(false);
   };
 
+  // --- LÓGICA PRINCIPAL DE GUARDADO INTELIGENTE ---
   const guardarCita = async () => {
       if (!formData.mascota || !formData.dueño || !formData.fecha || !formData.hora) return alert("Faltan datos");
       
@@ -248,36 +251,57 @@ export default function DashboardVeterinario() {
 
       setGuardando(true);
       try {
-          if (modoPaciente === 'nuevo' && !citaActiva) {
-              const qDuplicado = query(
-                  collection(db, "pacientes"), 
-                  where("telefono", "==", formData.telefono.trim())
-              );
-              const snapshot = await getDocs(qDuplicado);
-              let existe = false;
-              snapshot.forEach(doc => {
-                  if (doc.data().nombre.toLowerCase() === formData.mascota.trim().toLowerCase()) existe = true;
-              });
+          let finalPacienteId = formData.pacienteId;
+          let finalClienteId = formData.clienteId;
 
-              if (!existe) {
-                  await addDoc(collection(db, "pacientes"), {
-                      nombre: formData.mascota.trim(),
-                      especie: formData.especie,
-                      raza: formData.raza || 'Desconocido',
-                      edad: formData.edad || 'No especificada',
-                      peso: '', 
-                      dueño: formData.dueño.trim(),
+          // CASO: NUEVO PACIENTE DESDE AGENDA
+          // Aquí sucede la magia de unificación: Busca cliente existente o crea uno nuevo
+          if (modoPaciente === 'nuevo' && !citaActiva) {
+              
+              // 1. GESTIÓN DE CLIENTE (Buscar por teléfono o crear)
+              const qCliente = query(collection(db, "clientes"), where("telefono", "==", formData.telefono.trim()));
+              const snapCliente = await getDocs(qCliente);
+              
+              if (!snapCliente.empty) {
+                  // Cliente existe, usamos su ID
+                  finalClienteId = snapCliente.docs[0].id;
+              } else {
+                  // Cliente no existe, lo creamos
+                  const nuevoCliente = await addDoc(collection(db, "clientes"), {
+                      nombre: formData.dueño.trim(),
                       telefono: formData.telefono.trim(),
-                      notas: 'Creado desde Agenda (Admin)',
-                      vacunas: [],
-                      createdAt: new Date()
+                      email: '', // Se pueden llenar luego en ClientesPage
+                      direccion: '',
+                      createdAt: new Date(),
+                      updatedAt: new Date()
                   });
+                  finalClienteId = nuevoCliente.id;
               }
+
+              // 2. CREACIÓN DE PACIENTE VINCULADO
+              // Creamos el paciente con el clienteId correcto
+              const nuevoPaciente = await addDoc(collection(db, "pacientes"), {
+                  nombre: formData.mascota.trim(),
+                  especie: formData.especie,
+                  raza: formData.raza || 'Desconocido',
+                  edad: formData.edad || 'No especificada',
+                  clienteId: finalClienteId, // VINCULACIÓN
+                  dueño: formData.dueño.trim(), // Datos visuales legacy
+                  telefono: formData.telefono.trim(),
+                  notas: 'Creado desde Agenda (Rápido)',
+                  vacunas: [],
+                  activo: true,
+                  createdAt: new Date()
+              });
+              finalPacienteId = nuevoPaciente.id;
           }
 
+          // Preparar payload final de la cita
           const fechaFinal = new Date(formData.fecha + 'T' + formData.hora);
           const payload = { 
               ...formData, 
+              pacienteId: finalPacienteId,
+              clienteId: finalClienteId, // Guardamos también el cliente en la cita
               fecha: fechaFinal, 
               fechaSolo: formData.fecha, 
               estado: citaActiva?.estado || 'pendiente' 
@@ -289,7 +313,7 @@ export default function DashboardVeterinario() {
           cerrarFormulario();
       } catch (error) { 
           console.error(error);
-          alert("Error al guardar"); 
+          alert("Error al guardar: " + error.message); 
       } finally { 
           setGuardando(false); 
       }
@@ -361,7 +385,7 @@ export default function DashboardVeterinario() {
         <>
             <main className="flex-1 overflow-y-auto relative">
                 
-                {/* HEADER DE CONTROLES (Ahora estático, se va con el scroll) */}
+                {/* HEADER DE CONTROLES */}
                 <div className="bg-gray-50 dark:bg-slate-900 pb-4 pt-4 px-4 border-b border-gray-100 dark:border-slate-800">
                     {/* Switcher de Vistas */}
                     <div className="flex bg-gray-200 dark:bg-slate-800 p-1 rounded-lg mb-4">
@@ -376,7 +400,7 @@ export default function DashboardVeterinario() {
                         ))}
                     </div>
 
-                    {/* Navegación de Fecha con Botones Mejorados */}
+                    {/* Navegación de Fecha */}
                     <div className="flex items-center justify-between bg-white dark:bg-slate-800 p-2 rounded-xl shadow-sm border border-gray-100 dark:border-slate-700">
                         <button 
                             onClick={() => cambiarFecha(-1)} 
@@ -472,7 +496,7 @@ export default function DashboardVeterinario() {
       {/* VISTA 2: FORMULARIO */}
       {vista === 'formulario' && (
           <main className="flex-1 overflow-y-auto p-4 bg-gray-100 dark:bg-slate-900 relative">
-            <div className="flex justify-between items-center mb-6 sticky top-0 bg-gray-100 dark:bg-slate-900 z-20 py-4 border-b border-gray-200 dark:border-slate-800 shadow-sm">
+            <div className="flex justify-between items-center -mt-14 mb-6 -mx-4 sticky -top-5 bg-gray-100 dark:bg-slate-900 z-20 py-2 border-b border-gray-200 dark:border-slate-800 shadow-sm px-4">
                 <button onClick={cerrarFormulario} className="text-gray-500 dark:text-gray-400 font-medium px-2 py-1">Cancelar</button>
                 <h2 className="font-bold text-gray-700 dark:text-white">{citaActiva ? 'Editar Cita' : 'Nueva Cita'}</h2>
                 <button 
@@ -488,7 +512,7 @@ export default function DashboardVeterinario() {
                 
                 {/* SWITCHER DE MODO PACIENTE */}
                 {!citaActiva && (
-                    <div className="flex p-1 bg-gray-200 dark:bg-slate-800 rounded-lg mb-4">
+                    <div className="flex p-1 bg-gray-200 dark:bg-slate-800 rounded-lg mb-4 mt-12">
                         <button 
                             onClick={() => { setModoPaciente('existente'); setFormData({...formData, mascota: '', dueño: '', telefono: ''}); }}
                             className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${modoPaciente === 'existente' ? 'bg-white dark:bg-slate-700 shadow text-blue-600 dark:text-blue-400' : 'text-gray-500'}`}

@@ -7,17 +7,19 @@ import Link from 'next/link';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 
-// 1. AGREGAMOS LA NUEVA RUTA AL ORDEN
+// 1. ACTUALIZAMOS EL ORDEN DE PÁGINAS
 const PAGE_ORDER = {
   '/dashboard': 0,
   '/pacientes': 1,
-  '/atencion': 2, 
+  '/clientes': 2, // Nueva pestaña
+  '/atencion': 3, 
 };
 
 // 2. DEFINIMOS SU TÍTULO E ICONO
 const PAGE_INFO = {
   '/dashboard': { title: 'Agenda', icon: '📅' },
   '/pacientes': { title: 'Pacientes', icon: '🐶' },
+  '/clientes': { title: 'Clientes', icon: '👤' }, // Nuevo
   '/atencion': { title: 'Atención', icon: '🩺' },
 };
 
@@ -198,7 +200,17 @@ export default function AdminLayout({ children }) {
           <span className="text-[10px] font-bold mt-1">Pacientes</span>
         </Link>
 
-        {/* 3. BOTÓN DE ATENCIÓN (NUEVO) */}
+        {/* 3. BOTÓN DE CLIENTES (NUEVO) */}
+        <Link 
+          href="/clientes" 
+          replace={true}
+          className={`flex flex-col items-center justify-center w-full h-full transition-colors ${pathname === '/clientes' ? 'text-orange-600 dark:text-orange-400' : 'text-gray-400 dark:text-gray-500'}`}
+        >
+           <span className="text-xl">👤</span>
+           <span className="text-[10px] font-bold mt-1">Clientes</span>
+        </Link>
+
+        {/* 4. BOTÓN DE ATENCIÓN */}
         <Link 
           href="/atencion" 
           replace={true}
