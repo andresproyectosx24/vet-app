@@ -1,36 +1,50 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# VetApp 🐾
 
-## Getting Started
+**VetApp** es una **aplicación web para la gestión veterinaria**, diseñada con un enfoque de **doble plataforma**:
+- 🧑‍⚕️ **Aplicación interna para el veterinario**
+- 🐶 **Portal para clientes** (dueños de mascotas)
 
-First, run the development server:
+El proyecto está pensado como un sistema integral para mejorar la comunicación, el control de información y la gestión diaria de una clínica veterinaria.
+
+---
+
+## 🎯 Objetivo del proyecto
+Crear una solución moderna que permita:
+- Al veterinario gestionar pacientes, citas e información clínica.
+- A los clientes acceder a información relevante de sus mascotas desde un portal propio.
+
+El enfoque principal es **separar claramente los roles**, manteniendo una sola base de proyecto.
+
+---
+
+## 🚀 Funcionalidades principales
+
+### 🧑‍⚕️ Lado veterinario
+- Gestión de pacientes (mascotas)
+- Registro de información clínica
+- Visualización y administración de datos
+- Base para agenda y seguimiento
+
+### 🐾 Portal para clientes
+- Acceso a información de sus mascotas
+- Visualización de datos relevantes
+- Preparado para futuras funciones (historial, citas, notificaciones)
+
+---
+
+## 🛠️ Tecnologías utilizadas
+- **Next.js**  
+- **TypeScript**  
+- **React**  
+- Estilos modernos (CSS / Tailwind / módulos, según implementación)
+- Arquitectura pensada para escalar a backend real
+
+---
+
+## ⚙️ Ejecución local
+
+Clona el repositorio:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+git clone https://github.com/andresproyectosx24/vet-app.git
+cd vet-app
