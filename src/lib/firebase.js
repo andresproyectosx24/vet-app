@@ -4,13 +4,12 @@ import { getAuth } from "firebase/auth";
 import { getStorage } from "firebase/storage"; // <--- NUEVO IMPORT
 
 const firebaseConfig = {
-    apiKey: "AIzaSyD-9pijoF0zfFfD-kzbuJWDtI0l29U1Ao0",
-  authDomain: "veterinario-306b2.firebaseapp.com",
-  projectId: "veterinario-306b2",
-  storageBucket: "veterinario-306b2.firebasestorage.app",
-  messagingSenderId: "784971952466",
-  appId: "1:784971952466:web:ad62a7d3d5de2ba5d6ca8b",
-  measurementId: "G-WTLETBTGFW"
+    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
 // Singleton para evitar reinicializar en Next.js
